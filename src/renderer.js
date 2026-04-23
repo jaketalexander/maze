@@ -1,11 +1,7 @@
 export const HUD_HEIGHT = 64;
 
 // ─── colours ─────────────────────────────────────────────────────────────────
-const WALL_BASE   = '#1f8a1f';
-const WALL_TOP    = '#2dbe2d';   // highlight (lighter strip on inner face)
-const WALL_SHADOW = '#0d500d';   // darker outer face
-const PATH_COLOR  = '#160b04';   // near-black brown
-const PATH_EDGE   = '#2a1505';   // subtle path edge highlight
+const PATH_COLOR  = '#080806';   // near-black path floor
 
 const EXIT_P1_COLOR = '#ff5555';
 const EXIT_P2_COLOR = '#5588ff';
@@ -16,7 +12,39 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx    = canvas.getContext('2d');
     this.pulse  = 0;
-    this._mazeCache = null; // offscreen canvas for static maze
+    this._mazeCache   = null;
+    this._dirtPattern = this._buildDirtPattern();
+  }
+
+  /** 80×80 earthy dirt tile — kept for background surround. */
+  _buildDirtPattern() {
+    const SIZE = 80;
+    const oc   = document.createElement('canvas');
+    oc.width = oc.height = SIZE;
+    const c = oc.getContext('2d');
+    c.fillStyle = '#7a5028';
+    c.fillRect(0, 0, SIZE, SIZE);
+
+    let s = 1337;
+    const rnd = () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
+
+    const blobColors = ['#6b4420','#8c5e30','#5a3610','#9a6a38','#6e4824','#a07035','#4e2e0c'];
+    for (let i = 0; i < 60; i++) {
+      const x = rnd() * SIZE;
+      const y = rnd() * SIZE;
+      const r = 1 + rnd() * 4;
+      c.fillStyle = blobColors[Math.floor(rnd() * blobColors.length)];
+      c.beginPath();
+      c.ellipse(x, y, r, r * (0.5 + rnd() * 0.8), rnd() * Math.PI, 0, Math.PI * 2);
+      c.fill();
+    }
+    for (let i = 0; i < 18; i++) {
+      const x = rnd() * SIZE;
+      const y = rnd() * SIZE;
+      c.fillStyle = `rgba(200,160,90,${0.15 + rnd() * 0.25})`;
+      c.fillRect(x, y, 1 + Math.floor(rnd() * 2), 1 + Math.floor(rnd() * 2));
+    }
+    return this.ctx.createPattern(oc, 'repeat');
   }
 
   resize() {
@@ -40,28 +68,23 @@ export class Renderer {
 
   clear() {
     const { ctx, canvas } = this;
-    ctx.fillStyle = '#0a0a0a';
+    ctx.fillStyle = this._dirtPattern;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  /** Draws the maze using a "carving" approach (thick hedges, narrow dark paths). */
   drawMaze(maze, cellSize, offsetX, offsetY, p1FakeWall, p2FakeWall) {
     const { ctx } = this;
-    const cols = maze[0].length;
-    const rows = maze.length;
-    const wt   = Math.max(3, Math.round(cellSize * 0.23)); // wall half-thickness
+    const cols  = maze[0].length;
+    const rows  = maze.length;
+    const mazeW = cols * cellSize;
+    const mazeH = rows * cellSize;
+    const wt    = Math.max(3, Math.round(cellSize * 0.22));
 
-    // ── 1. Fill with wall (green) gradient ──
-    const wallGrad = ctx.createLinearGradient(offsetX, offsetY, offsetX, offsetY + rows * cellSize);
-    wallGrad.addColorStop(0,    '#3dd43d');
-    wallGrad.addColorStop(0.12, WALL_TOP);
-    wallGrad.addColorStop(0.5,  WALL_BASE);
-    wallGrad.addColorStop(0.88, WALL_SHADOW);
-    wallGrad.addColorStop(1,    '#0a3c0a');
-    ctx.fillStyle = wallGrad;
-    ctx.fillRect(offsetX, offsetY, cols * cellSize, rows * cellSize);
+    // ── 1. Solid bright green wall fill ──────────────────────────────────────
+    ctx.fillStyle = '#2ec820';
+    ctx.fillRect(offsetX, offsetY, mazeW, mazeH);
 
-    // ── 2. Carve cell interiors (path colour) ──
+    // ── 2. Carve near-black paths ─────────────────────────────────────────────
     ctx.fillStyle = PATH_COLOR;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -74,20 +97,18 @@ export class Renderer {
       }
     }
 
-    // ── 3. Carve open passages (horizontal & vertical connectors) ──
+    // ── 3. Open passage connectors ────────────────────────────────────────────
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const cell = maze[r][c];
         const x    = offsetX + c * cellSize;
         const y    = offsetY + r * cellSize;
 
-        // Right passage
         if (c < cols - 1 && !cell.walls.right
             && !hasFW(p1FakeWall, c, r, 'right')
             && !hasFW(p2FakeWall, c, r, 'right')) {
           ctx.fillRect(x + cellSize - wt, y + wt, 2 * wt, cellSize - 2 * wt);
         }
-        // Bottom passage
         if (r < rows - 1 && !cell.walls.bottom
             && !hasFW(p1FakeWall, c, r, 'bottom')
             && !hasFW(p2FakeWall, c, r, 'bottom')) {
@@ -96,37 +117,15 @@ export class Renderer {
       }
     }
 
-    // ── 4. Inner-face highlight (bright strip right inside path edges) ──
-    if (cellSize >= 18) {
-      ctx.fillStyle = PATH_EDGE;
-      const e = 1;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const cell = maze[r][c];
-          const x    = offsetX + c * cellSize;
-          const y    = offsetY + r * cellSize;
+    // ── 4. Single thin bright outline on the very top of the maze ────────────
+    //    (matches the top-lit look in the reference without any per-cell grid)
+    ctx.fillStyle = 'rgba(140,255,80,0.5)';
+    ctx.fillRect(offsetX, offsetY, mazeW, Math.max(2, Math.round(cellSize * 0.07)));
 
-          if (c < cols - 1 && !cell.walls.right
-              && !hasFW(p1FakeWall, c, r, 'right')
-              && !hasFW(p2FakeWall, c, r, 'right')) {
-            // vertical strip on each side of passage
-            ctx.fillRect(x + cellSize - wt, y + wt, e, cellSize - 2 * wt);
-            ctx.fillRect(x + cellSize + wt - e, y + wt, e, cellSize - 2 * wt);
-          }
-          if (r < rows - 1 && !cell.walls.bottom
-              && !hasFW(p1FakeWall, c, r, 'bottom')
-              && !hasFW(p2FakeWall, c, r, 'bottom')) {
-            ctx.fillRect(x + wt, y + cellSize - wt, cellSize - 2 * wt, e);
-            ctx.fillRect(x + wt, y + cellSize + wt - e, cellSize - 2 * wt, e);
-          }
-        }
-      }
-    }
-
-    // ── 5. Outer border ──
-    ctx.strokeStyle = '#0d500d';
+    // ── 5. Outer border ───────────────────────────────────────────────────────
+    ctx.strokeStyle = '#0a380a';
     ctx.lineWidth   = 3;
-    ctx.strokeRect(offsetX, offsetY, cols * cellSize, rows * cellSize);
+    ctx.strokeRect(offsetX, offsetY, mazeW, mazeH);
   }
 
   drawExits(p1ExitCol, p1ExitRow, p2ExitCol, p2ExitRow, cellSize, offsetX, offsetY) {
@@ -157,7 +156,7 @@ export class Renderer {
     if (cellSize >= 20) {
       const fs = Math.max(6, cellSize * 0.17);
       ctx.fillStyle    = color;
-      ctx.font         = `bold ${fs}px "Share Tech Mono", monospace`;
+      ctx.font         = `700 ${fs}px "Nunito", Arial, sans-serif`;
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
       ctx.shadowColor  = color;
@@ -279,14 +278,14 @@ export class Renderer {
     const ch   = MAP / rows;
 
     ctx.save();
-    ctx.fillStyle   = 'rgba(0,0,0,0.8)';
-    ctx.strokeStyle = 'rgba(40,160,40,0.4)';
+    ctx.fillStyle   = 'rgba(20, 8, 2, 0.85)';
+    ctx.strokeStyle = 'rgba(90, 55, 15, 0.7)';
     ctx.lineWidth   = 1;
     ctx.fillRect(mapX, mapY, MAP, MAP);
     ctx.strokeRect(mapX, mapY, MAP, MAP);
 
     // Walls
-    ctx.strokeStyle = '#186018';
+    ctx.strokeStyle = WALL_COLOR;
     ctx.lineWidth   = Math.max(0.4, cw * 0.5);
     ctx.beginPath();
     for (let r = 0; r < rows; r++) {
@@ -323,8 +322,9 @@ export class Renderer {
       canvas.width / 2, canvas.height / 2, 0,
       canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.65
     );
-    grad.addColorStop(0, 'transparent');
-    grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    grad.addColorStop(0,   'transparent');
+    grad.addColorStop(0.7, 'transparent');
+    grad.addColorStop(1,   'rgba(0,0,0,0.45)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
@@ -336,7 +336,7 @@ export class Renderer {
     ctx.save();
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font         = `900 ${size}px "Orbitron", sans-serif`;
+    ctx.font         = `400 ${size}px "Fredoka One", "Arial Rounded MT Bold", sans-serif`;
     ctx.fillStyle    = value === 0 ? '#44ff44' : '#ffffff';
     ctx.shadowColor  = value === 0 ? '#44ff44' : '#44cc44';
     ctx.shadowBlur   = 50;

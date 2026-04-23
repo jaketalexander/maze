@@ -2,8 +2,7 @@ import { generateMaze }                          from './maze.js';
 import { Player }                                 from './player.js';
 import { Renderer, HUD_HEIGHT }                  from './renderer.js';
 import { AudioManager }                           from './audio.js';
-import { fmt, show, hide, updateTimers,
-         updateWallIndicator }                    from './ui.js';
+import { show, hide, updateWallIndicator }        from './ui.js';
 
 // ─── Difficulties ─────────────────────────────────────────────────────────────
 
@@ -35,8 +34,6 @@ let cellSize, offsetX, offsetY;
 let p1StartCol, p1StartRow, p1ExitCol, p1ExitRow;
 let p2StartCol, p2StartRow, p2ExitCol, p2ExitRow;
 
-let p1Time   = 0;
-let p2Time   = 0;
 let cdValue  = 3;
 let cdTimer  = 1.0;
 
@@ -81,8 +78,6 @@ function startGame() {
   p2.setSnap(p2StartCol, p2StartRow);
   p2.angle = -Math.PI / 2;
 
-  p1Time  = 0;
-  p2Time  = 0;
   cdValue = 3;
   cdTimer = 1.0;
 
@@ -122,8 +117,6 @@ function restartGame() {
   updateWallIndicator(1, false);
   updateWallIndicator(2, false);
 
-  p1Time  = 0;
-  p2Time  = 0;
   cdValue = 3;
   cdTimer = 1.0;
 
@@ -167,11 +160,9 @@ function triggerWin(winner) {
   if (winner === 1) {
     winTitle.textContent = 'PLAYER 1 WINS!';
     winTitle.className   = 'win-title p1';
-    document.getElementById('win-time-value').textContent = fmt(p1Time);
   } else {
     winTitle.textContent = 'PLAYER 2 WINS!';
     winTitle.className   = 'win-title p2';
-    document.getElementById('win-time-value').textContent = fmt(p2Time);
   }
   show('win-screen');
 }
@@ -198,9 +189,6 @@ function update(dt) {
 
   if (state !== S.PLAYING) return;
 
-  p1Time += dt;
-  p2Time += dt;
-  updateTimers(p1Time, p2Time);
 
   // Update players (each passes opponent's fake wall for collision)
   const p1PrevBump = p1.bumpTimer;
@@ -272,7 +260,7 @@ window.addEventListener('keydown', e => {
     case 'KeyS': inp1.down  = true; break;
     case 'KeyQ':
       if (state === S.PLAYING) {
-        const placed = p1.placeFakeWall(maze, cellSize, offsetX, offsetY);
+        const placed = p1.placeFakeWall(maze);
         if (placed) { audio.playFakeWall(); updateWallIndicator(1, true); }
       }
       break;
@@ -286,7 +274,7 @@ window.addEventListener('keydown', e => {
     case 'ArrowDown':  inp2.down  = true; break;
     case 'Slash':
       if (state === S.PLAYING) {
-        const placed = p2.placeFakeWall(maze, cellSize, offsetX, offsetY);
+        const placed = p2.placeFakeWall(maze);
         if (placed) { audio.playFakeWall(); updateWallIndicator(2, true); }
       }
       break;

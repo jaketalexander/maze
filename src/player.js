@@ -1,8 +1,3 @@
-/**
- * Tile-based player — always moves center-to-center like Pac-Man.
- * The player pixel position interpolates between cell centres;
- * it is NEVER off-grid.
- */
 export class Player {
   constructor(cx, cy, cellSize, color) {
     this.color        = color;
@@ -12,33 +7,34 @@ export class Player {
   }
 
   _init(cx, cy, cellSize) {
-    this.cx       = cx;
-    this.cy       = cy;
-    this.cellSize = cellSize;
-    this.radius   = cellSize * 0.22;
-    this.speed    = cellSize * 6.0; // px per second (cell-to-cell travel)
+    this.cx        = cx;
+    this.cy        = cy;
+    this.cellSize  = cellSize;
+    this.radius    = cellSize * 0.22;
+    // 4 cells/sec → ~250 ms per cell traversal
+    this.speed     = cellSize * 4.0;
 
-    // The cell the player currently occupies (or just left from)
-    this.snapCol = Math.round((cx - 0) / cellSize - 0.5); // rough; reposition corrects it
-    this.snapRow = Math.round((cy - 0) / cellSize - 0.5);
-
-    // The cell the player is currently heading toward
-    this.targetCol = this.snapCol;
-    this.targetRow = this.snapRow;
+    this.snapCol   = 0;
+    this.snapRow   = 0;
+    this.targetCol = 0;
+    this.targetRow = 0;
     this.isMoving  = false;
 
-    // Queued input buffer
-    this.queuedDx = 0;
-    this.queuedDy = 0;
-    this.queueAge = 0;
+    this.moveDx    = 0;
+    this.moveDy    = 0;
 
-    // Direction currently being travelled (used as straight-ahead fallback)
-    this.moveDx = 0;
-    this.moveDy = 0;
+    // ── Tap-vs-hold state (OS keyboard-style autorepeat) ────────
+    // pressStarted: we've already fired the first cell for this press.
+    // repeatMode:   hold-delay passed → subsequent cells fire instantly.
+    // holdTime:     seconds the current direction has been held.
+    // lastDx/lastDy: to detect direction changes.
+    this.pressStarted = false;
+    this.repeatMode   = false;
+    this.holdTime     = 0;
+    this.lastDx       = 0;
+    this.lastDy       = 0;
 
-    // Facing angle (snaps to cardinal directions)
-    this.angle = -Math.PI / 2; // facing up by default
-
+    this.angle      = -Math.PI / 2;
     this.trail      = [];
     this.trailMax   = 18;
     this.trailTimer = 0;
@@ -46,24 +42,7 @@ export class Player {
     this.moving     = false;
   }
 
-  /** Called after a resize or restart — snaps cx/cy to a known cell centre. */
-  reposition(cx, cy, cellSize) {
-    this.cx       = cx;
-    this.cy       = cy;
-    this.cellSize = cellSize;
-    this.radius   = cellSize * 0.22;
-    this.speed    = cellSize * 6.0;
-    this.isMoving = false;
-    this.trail    = [];
-    this.trailTimer = 0;
-    this.bumpTimer  = 0;
-    this.queuedDx  = 0;
-    this.queuedDy  = 0;
-    this.queueAge  = 0;
-    this.moveDx    = 0;
-    this.moveDy    = 0;
-    // snap and target will be set properly by the caller via setSnap()
-  }
+  reposition(cx, cy, cellSize) { this._init(cx, cy, cellSize); }
 
   setSnap(col, row) {
     this.snapCol   = col;
@@ -77,7 +56,7 @@ export class Player {
     this.fakeWallUsed = false;
   }
 
-  placeFakeWall(maze, cellSize, offsetX, offsetY) {
+  placeFakeWall(maze) {
     if (this.fakeWallUsed) return false;
     const cols = maze[0].length;
     const rows = maze.length;
@@ -85,13 +64,12 @@ export class Player {
     const row  = this.snapRow;
     if (col < 0 || col >= cols || row < 0 || row >= rows) return false;
 
-    // Prefer the direction the player is currently facing
     let side;
     const a = this.angle;
-    if      (Math.abs(a) < 0.1)                  side = 'right';
-    else if (Math.abs(a - Math.PI / 2)  < 0.1)   side = 'bottom';
-    else if (Math.abs(a + Math.PI / 2)  < 0.1)   side = 'top';
-    else                                           side = 'left';
+    if      (Math.abs(a) < 0.1)               side = 'right';
+    else if (Math.abs(a - Math.PI / 2) < 0.1) side = 'bottom';
+    else if (Math.abs(a + Math.PI / 2) < 0.1) side = 'top';
+    else                                        side = 'left';
 
     for (const s of [side, 'right', 'left', 'bottom', 'top']) {
       if (canPlaceOn(maze, col, row, s, cols, rows)) {
@@ -107,30 +85,31 @@ export class Player {
     const cols = maze[0].length;
     const rows = maze.length;
 
-    // ── 4-directional input (horizontal takes priority) ──────────────
+    // Hold-delay before continuous-move kicks in. MUST be >= cellTime (~250 ms)
+    // or a long tap would trigger a second cell. 0.32 s gives a small buffer.
+    const HOLD_DELAY = 0.32;
+
+    // ── 4-directional input — horizontal wins ties ─────────────────────────
     let dx = 0, dy = 0;
     if (input.left)  dx -= 1;
     if (input.right) dx += 1;
     if (input.up)    dy -= 1;
     if (input.down)  dy += 1;
     if (dx !== 0) dy = 0;
-
     const pressing = dx !== 0 || dy !== 0;
 
-    // ── Update input buffer (queue a direction with a short time window) ─
-    if (pressing) {
-      this.queuedDx  = dx;
-      this.queuedDy  = dy;
-      this.queueAge  = 0;          // reset buffer timer on any keypress
-    } else {
-      this.queueAge += dt;
-      if (this.queueAge > 0.25) {  // clear buffer 250 ms after key release
-        this.queuedDx = 0;
-        this.queuedDy = 0;
-      }
+    // ── Track tap-vs-hold state ────────────────────────────────────────────
+    // Any key release or direction change resets the "press cycle".
+    if (!pressing || dx !== this.lastDx || dy !== this.lastDy) {
+      this.pressStarted = false;
+      this.repeatMode   = false;
+      this.holdTime     = 0;
     }
+    this.lastDx = dx;
+    this.lastDy = dy;
+    if (pressing) this.holdTime += dt;
 
-    // ── If mid-movement: interpolate toward target cell centre ────────
+    // ── Mid-movement: glide toward target ──────────────────────────────────
     if (this.isMoving) {
       const tx   = offsetX + this.targetCol * cellSize + cellSize / 2;
       const ty   = offsetY + this.targetRow * cellSize + cellSize / 2;
@@ -140,51 +119,48 @@ export class Player {
       const step = this.speed * dt;
 
       if (step >= rem) {
-        // Arrived at target cell
         this.cx       = tx;
         this.cy       = ty;
         this.snapCol  = this.targetCol;
         this.snapRow  = this.targetRow;
         this.isMoving = false;
-
-        const qdx = this.queuedDx;
-        const qdy = this.queuedDy;
-
-        // 1. Try the buffered/queued direction
-        if ((qdx !== 0 || qdy !== 0) &&
-            this._tryMove(qdx, qdy, maze, cols, rows, offsetX, offsetY, cellSize, opponentFakeWall)) {
-          // turned or continued — good
-        }
-        // 2. Queued direction was blocked (or nothing queued) → keep going straight
-        else if (!this.isMoving && (this.moveDx !== 0 || this.moveDy !== 0)) {
-          this._tryMove(this.moveDx, this.moveDy, maze, cols, rows, offsetX, offsetY, cellSize, opponentFakeWall);
-        }
-
-        // Clear the buffer after it has been consumed
-        if (!pressing) {
-          this.queuedDx = 0;
-          this.queuedDy = 0;
-        }
       } else {
-        // Still travelling
         this.cx += (remX / rem) * step;
         this.cy += (remY / rem) * step;
       }
+    }
 
-    } else {
-      // ── Idle at a cell centre: respond to input immediately ─────────
-      if (pressing) {
+    // ── Idle: decide whether to start the next cell ────────────────────────
+    //   First cell of a press  → fires instantly.
+    //   Cell 2+ during the initial hold-delay → DOES NOT fire (this is what
+    //     guarantees "tap = 1 cell" even if the tap outlasts cell 1).
+    //   After hold-delay expires → enter repeatMode, cells fire seamlessly.
+    if (!this.isMoving && pressing) {
+      let shouldMove = false;
+
+      if (!this.pressStarted) {
+        // Fresh key press — fire first cell immediately.
+        shouldMove = true;
+        this.pressStarted = true;
+      } else if (this.repeatMode) {
+        // Already in continuous-hold mode — fire next cell seamlessly.
+        shouldMove = true;
+      } else if (this.holdTime >= HOLD_DELAY) {
+        // Hold threshold reached — engage repeat mode from here on.
+        shouldMove = true;
+        this.repeatMode = true;
+      }
+
+      if (shouldMove) {
         if (!this._tryMove(dx, dy, maze, cols, rows, offsetX, offsetY, cellSize, opponentFakeWall)) {
-          // Blocked — small visual bump
           if (this.bumpTimer <= 0) this.bumpTimer = 0.08;
         }
       }
     }
 
-    this.moving = this.isMoving;
+    this.moving    = this.isMoving;
     this.bumpTimer = Math.max(0, this.bumpTimer - dt);
 
-    // Trail
     this.trailTimer -= dt;
     if (this.trailTimer <= 0 && this.isMoving) {
       this.trailTimer = 0.05;
@@ -193,15 +169,14 @@ export class Player {
     }
   }
 
-  /** Attempt to move one cell in direction (dx,dy). Returns true if successful. */
-  _tryMove(dx, dy, maze, cols, rows, offsetX, offsetY, cellSize, oppFW) {
+  _tryMove(dx, dy, maze, cols, rows, offsetX, offsetY, cellSize, _oppFW) {
     const newCol = this.snapCol + dx;
     const newRow = this.snapRow + dy;
     if (newCol < 0 || newCol >= cols || newRow < 0 || newRow >= rows) return false;
 
     const side = dirToSide(dx, dy);
     if (maze[this.snapRow][this.snapCol].walls[side]) return false;
-    if (matchesFW(oppFW, this.snapCol, this.snapRow, side)) return false;
+    // Fake walls are passable by both players — they are visual deceptions only.
 
     this.targetCol = newCol;
     this.targetRow = newRow;
@@ -209,7 +184,6 @@ export class Player {
     this.moveDx    = dx;
     this.moveDy    = dy;
 
-    // Snap angle to movement direction
     if      (dx > 0) this.angle = 0;
     else if (dx < 0) this.angle = Math.PI;
     else if (dy > 0) this.angle = Math.PI / 2;
@@ -232,15 +206,6 @@ function dirToSide(dx, dy) {
   return 'top';
 }
 
-function matchesFW(fw, col, row, side) {
-  if (!fw) return false;
-  if (fw.col === col && fw.row === row && fw.side === side) return true;
-  if (side === 'right'  && fw.col === col+1 && fw.row === row   && fw.side === 'left')   return true;
-  if (side === 'left'   && fw.col === col-1 && fw.row === row   && fw.side === 'right')  return true;
-  if (side === 'bottom' && fw.col === col   && fw.row === row+1 && fw.side === 'top')    return true;
-  if (side === 'top'    && fw.col === col   && fw.row === row-1 && fw.side === 'bottom') return true;
-  return false;
-}
 
 function canPlaceOn(maze, col, row, side, cols, rows) {
   if (maze[row][col].walls[side]) return false;
