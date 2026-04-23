@@ -23,16 +23,16 @@ export class Player {
     this.moveDx    = 0;
     this.moveDy    = 0;
 
-    // ── Tap-vs-hold state (OS keyboard-style autorepeat) ────────
-    // pressStarted: we've already fired the first cell for this press.
-    // repeatMode:   hold-delay passed → subsequent cells fire instantly.
-    // holdTime:     seconds the current direction has been held.
-    // lastDx/lastDy: to detect direction changes.
-    this.pressStarted = false;
-    this.repeatMode   = false;
-    this.holdTime     = 0;
-    this.lastDx       = 0;
-    this.lastDy       = 0;
+    // pressStarted: first cell of this key press has fired.
+    // repeatMode:    continuous glide (chain at every cell arrival).
+    // commitChainNextFrame: landed on cell 1 while key still down — if key
+    //   still down next frame, start cell 2 (avoids ~300 ms idle delay stutter;
+    //   keyup between frames cancels so taps stay one cell).
+    this.pressStarted           = false;
+    this.repeatMode             = false;
+    this.commitChainNextFrame   = false;
+    this.lastDx                 = 0;
+    this.lastDy                 = 0;
 
     this.angle      = -Math.PI / 2;
     this.trail      = [];
@@ -85,10 +85,6 @@ export class Player {
     const cols = maze[0].length;
     const rows = maze.length;
 
-    // Hold-delay before continuous-move kicks in. MUST be >= cellTime (~250 ms)
-    // or a long tap would trigger a second cell. 0.32 s gives a small buffer.
-    const HOLD_DELAY = 0.32;
-
     // ── 4-directional input — horizontal wins ties ─────────────────────────
     let dx = 0, dy = 0;
     if (input.left)  dx -= 1;
@@ -98,16 +94,22 @@ export class Player {
     if (dx !== 0) dy = 0;
     const pressing = dx !== 0 || dy !== 0;
 
-    // ── Track tap-vs-hold state ────────────────────────────────────────────
-    // Any key release or direction change resets the "press cycle".
     if (!pressing || dx !== this.lastDx || dy !== this.lastDy) {
-      this.pressStarted = false;
-      this.repeatMode   = false;
-      this.holdTime     = 0;
+      this.pressStarted         = false;
+      this.repeatMode           = false;
+      this.commitChainNextFrame = false;
     }
     this.lastDx = dx;
     this.lastDy = dy;
-    if (pressing) this.holdTime += dt;
+
+    // Resolve chain armed on the *previous* frame's arrival (true 1-frame gap).
+    if (!this.isMoving && this.commitChainNextFrame && pressing) {
+      this.commitChainNextFrame = false;
+      this.repeatMode = true;
+      if (!this._tryMove(dx, dy, maze, cols, rows, offsetX, offsetY, cellSize, opponentFakeWall)) {
+        if (this.bumpTimer <= 0) this.bumpTimer = 0.08;
+      }
+    }
 
     // ── Mid-movement: glide toward target ──────────────────────────────────
     if (this.isMoving) {
@@ -124,31 +126,32 @@ export class Player {
         this.snapCol  = this.targetCol;
         this.snapRow  = this.targetRow;
         this.isMoving = false;
+
+        // Continuous glide: chain next cell immediately.
+        if (pressing && this.repeatMode) {
+          if (!this._tryMove(dx, dy, maze, cols, rows, offsetX, offsetY, cellSize, opponentFakeWall)) {
+            if (this.bumpTimer <= 0) this.bumpTimer = 0.08;
+          }
+        } else if (pressing && this.pressStarted && !this.repeatMode) {
+          // Finished first cell with key still down — arm one-frame hand-off
+          // so a keyup before next frame still gives a single-cell tap.
+          this.commitChainNextFrame = true;
+        }
       } else {
         this.cx += (remX / rem) * step;
         this.cy += (remY / rem) * step;
       }
     }
 
-    // ── Idle: decide whether to start the next cell ────────────────────────
-    //   First cell of a press  → fires instantly.
-    //   Cell 2+ during the initial hold-delay → DOES NOT fire (this is what
-    //     guarantees "tap = 1 cell" even if the tap outlasts cell 1).
-    //   After hold-delay expires → enter repeatMode, cells fire seamlessly.
+    // ── Idle: first cell of a new press, or wall retry in repeat mode ──────
     if (!this.isMoving && pressing) {
       let shouldMove = false;
 
       if (!this.pressStarted) {
-        // Fresh key press — fire first cell immediately.
         shouldMove = true;
         this.pressStarted = true;
       } else if (this.repeatMode) {
-        // Already in continuous-hold mode — fire next cell seamlessly.
         shouldMove = true;
-      } else if (this.holdTime >= HOLD_DELAY) {
-        // Hold threshold reached — engage repeat mode from here on.
-        shouldMove = true;
-        this.repeatMode = true;
       }
 
       if (shouldMove) {
