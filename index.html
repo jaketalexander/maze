@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maze Racer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- ── HUD ──────────────────────────────────────────────────────── -->
+    <div id="hud" class="hidden">
+      <div class="hud-player p1">
+        <span class="hud-pip p1-pip">▲</span>
+        <span class="hud-name">PLAYER 1</span>
+        <span class="hud-label">WASD · Q=FAKE WALL</span>
+        <span id="hud-time-p1" class="hud-time">0:00.0</span>
+      </div>
+
+      <div class="hud-center">
+        <span id="hud-difficulty" class="hud-diff">EASY</span>
+        <span id="hud-maze-num" class="hud-maze">MAZE 1</span>
+      </div>
+
+      <div class="hud-player p2">
+        <span class="hud-pip p2-pip">▲</span>
+        <span class="hud-name">PLAYER 2</span>
+        <span class="hud-label">ARROWS · /=FAKE WALL</span>
+        <span id="hud-time-p2" class="hud-time">0:00.0</span>
+      </div>
+    </div>
+
+    <!-- ── Menu ─────────────────────────────────────────────────────── -->
+    <div id="menu-screen" class="screen">
+      <div class="screen-content">
+        <div class="title-block">
+          <h1 class="title">MAZE<span class="title-accent">RACER</span></h1>
+          <p class="subtitle">Two players · One maze · No mercy</p>
+        </div>
+
+        <div class="rules-box">
+          <div class="rule-col p1-col">
+            <div class="rule-pip p1-pip-lg">▲</div>
+            <strong>PLAYER 1</strong>
+            <p>WASD to move</p>
+            <p><kbd>Q</kbd> — place fake wall</p>
+            <p>Top-left → Bottom-right</p>
+          </div>
+          <div class="rule-divider">VS</div>
+          <div class="rule-col p2-col">
+            <div class="rule-pip p2-pip-lg">▲</div>
+            <strong>PLAYER 2</strong>
+            <p>Arrow keys to move</p>
+            <p><kbd>/</kbd> — place fake wall</p>
+            <p>Bottom-right → Top-left</p>
+          </div>
+        </div>
+
+        <div class="difficulty-select">
+          <h3 class="section-label">SELECT DIFFICULTY</h3>
+          <div class="difficulty-buttons">
+            <button class="diff-btn active" data-diff="easy">
+              <span class="diff-name">EASY</span>
+              <span class="diff-size">15 × 11</span>
+            </button>
+            <button class="diff-btn" data-diff="medium">
+              <span class="diff-name">MEDIUM</span>
+              <span class="diff-size">25 × 17</span>
+            </button>
+            <button class="diff-btn" data-diff="hard">
+              <span class="diff-name">HARD</span>
+              <span class="diff-size">37 × 25</span>
+            </button>
+            <button class="diff-btn" data-diff="expert">
+              <span class="diff-name">EXPERT</span>
+              <span class="diff-size">51 × 35</span>
+            </button>
+          </div>
+        </div>
+
+        <button id="start-btn" class="primary-btn">START RACE</button>
+        <p class="controls-hint">P or Esc to pause during game</p>
+      </div>
+    </div>
+
+    <!-- ── Win Screen ─────────────────────────────────────────────── -->
+    <div id="win-screen" class="screen hidden">
+      <div class="screen-content">
+        <h2 id="win-title" class="win-title">PLAYER 1 WINS!</h2>
+        <div class="win-time-block">
+          <span class="win-time-label">WINNING TIME</span>
+          <span id="win-time-value" class="win-time-value">0:00.00</span>
+        </div>
+        <div class="win-buttons">
+          <button id="next-maze-btn" class="primary-btn">NEXT MAZE</button>
+          <button id="retry-btn" class="secondary-btn">REMATCH</button>
+          <button id="menu-btn" class="secondary-btn">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Pause Screen ───────────────────────────────────────────── -->
+    <div id="pause-screen" class="screen hidden">
+      <div class="screen-content">
+        <h2 class="pause-title">PAUSED</h2>
+        <div class="pause-buttons">
+          <button id="resume-btn" class="primary-btn">RESUME</button>
+          <button id="restart-btn" class="secondary-btn">RESTART</button>
+          <button id="pause-menu-btn" class="secondary-btn">MAIN MENU</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
