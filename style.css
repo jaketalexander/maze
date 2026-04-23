@@ -340,23 +340,71 @@ kbd {
   letter-spacing: 1px;
 }
 
-/* Win Screen */
+/* Win Screen — compact floating card, NOT a full-screen overlay, so the
+   maze (with revealed fake walls highlighted in red) stays fully visible. */
+#win-screen {
+  position: absolute;
+  inset: auto 0 auto 0;
+  top: 84px;                 /* sits just below the HUD */
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  height: auto;
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;      /* let clicks pass around the card */
+  padding: 0;
+}
+
+#win-screen .screen-content {
+  pointer-events: auto;      /* but the card itself is clickable */
+  max-width: 360px;
+  padding: 16px 22px 18px;
+  gap: 8px;
+  background: rgba(35, 16, 4, 0.92);
+  border: 2px solid #5a3010;
+  box-shadow: 0 10px 36px rgba(0,0,0,0.7), 0 0 0 3px rgba(0,0,0,0.35);
+}
+
 .win-title {
   font-family: 'Fredoka One', cursive;
-  font-size: clamp(36px, 7vw, 60px);
+  font-size: clamp(22px, 3vw, 32px);
   letter-spacing: 2px;
-  margin-bottom: 18px;
-  text-shadow: 3px 3px 0 rgba(0,0,0,0.4);
+  margin-bottom: 8px;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
 }
 
 .win-title.p1 { color: #ff7070; }
 .win-title.p2 { color: #70a0ff; }
 
+.win-reveal-hint {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(240, 210, 150, 0.55);
+  margin-bottom: 10px;
+}
+.win-reveal-hint strong { color: #ff6060; }
 
 .win-buttons {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#win-screen .primary-btn {
+  font-size: 14px;
+  padding: 9px 22px;
+  margin: 0;
+}
+
+#win-screen .secondary-btn {
+  font-size: 12px;
+  padding: 8px 16px;
+  margin: 0;
 }
 
 .pause-title {

@@ -227,6 +227,10 @@ function render() {
   renderer.drawPlayer(p1);
   renderer.drawPlayer(p2);
 
+  if (state === S.WIN) {
+    renderer.drawFakeWallsRevealed(cellSize, offsetX, offsetY, [p1.fakeWall, p2.fakeWall]);
+  }
+
   renderer.drawVignette();
 
   const cfg = DIFFICULTIES[difficulty];

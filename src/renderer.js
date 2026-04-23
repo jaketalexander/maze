@@ -1,7 +1,10 @@
 export const HUD_HEIGHT = 64;
 
 // ─── colours ─────────────────────────────────────────────────────────────────
-const PATH_COLOR  = '#080806';   // near-black path floor
+// Path floor: dark earthy brown. Tuned bright enough that the black wall
+// drop-shadows painted on top produce visible contrast — without losing the
+// "deep dirt corridor" feel against the bright-green hedges.
+const PATH_COLOR  = '#3d2612';
 
 const EXIT_P1_COLOR = '#ff5555';
 const EXIT_P2_COLOR = '#5588ff';
@@ -117,15 +120,110 @@ export class Renderer {
       }
     }
 
-    // ── 4. Single thin bright outline on the very top of the maze ────────────
-    //    (matches the top-lit look in the reference without any per-cell grid)
-    ctx.fillStyle = 'rgba(140,255,80,0.5)';
-    ctx.fillRect(offsetX, offsetY, mazeW, Math.max(2, Math.round(cellSize * 0.07)));
+    // ── 4. Drop-shadow from every wall onto the path immediately below /
+    //    right of it. Shadows are painted INSIDE the path (the carved-out
+    //    area), never inside the wall body — so walls stay cleanly solid.
+    //    Light direction: top-left, so each hedge casts a soft shadow down
+    //    and to the right onto the floor, giving the maze a raised look.
+    if (cellSize >= 10) {
+      const sw = Math.max(2, Math.round(cellSize * 0.13));
+      ctx.fillStyle = 'rgba(0,0,0,0.82)';
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = maze[r][c];
+          const x    = offsetX + c * cellSize;
+          const y    = offsetY + r * cellSize;
+          const ix   = x + wt;
+          const iy   = y + wt;
+          const iw   = cellSize - 2 * wt;
+
+          // Wall above this cell → shadow at top of this cell's interior.
+          if (cell.walls.top) {
+            ctx.fillRect(ix, iy, iw, sw);
+          }
+          // Wall to the left of this cell → shadow at left of interior.
+          if (cell.walls.left) {
+            ctx.fillRect(ix, iy, sw, iw);
+          }
+          // 4-way open junction. The wt×wt corner piece at (x, y) is
+          // ALWAYS wall (never carved by step 2 or step 3), so the inside
+          // corner of the interior path needs a shadow nub — but neither
+          // the top nor left shadow of this cell draws, and the two
+          // corridor continuations stop short of the exact (ix, iy)
+          // pixel. Fill the sw×sw gap so corners "continue black around
+          // and touch" at every junction.
+          if (!cell.walls.top && !cell.walls.left) {
+            ctx.fillRect(ix, iy, sw, sw);
+          }
+
+          // Continue shadow across every open horizontal corridor (right
+          // passage). The wt×wt corner pieces immediately above such a
+          // corridor are ALWAYS wall — regardless of the cells' walls.top
+          // state — so the shadow line must not break at corridor gaps.
+          // Skip corridors blocked by a fake wall so the deception holds.
+          if (!cell.walls.right && c < cols - 1
+              && !hasFW(p1FakeWall, c, r, 'right')
+              && !hasFW(p2FakeWall, c, r, 'right')) {
+            ctx.fillRect(x + cellSize - wt, iy, 2 * wt, sw);
+          }
+          // Continue shadow down the left edge across every open vertical
+          // corridor (bottom passage) — same reasoning as above.
+          if (!cell.walls.bottom && r < rows - 1
+              && !hasFW(p1FakeWall, c, r, 'bottom')
+              && !hasFW(p2FakeWall, c, r, 'bottom')) {
+            ctx.fillRect(ix, y + cellSize - wt, sw, 2 * wt);
+          }
+        }
+      }
+    }
 
     // ── 5. Outer border ───────────────────────────────────────────────────────
     ctx.strokeStyle = '#0a380a';
     ctx.lineWidth   = 3;
     ctx.strokeRect(offsetX, offsetY, mazeW, mazeH);
+  }
+
+  /** Highlights both players' fake walls in pulsing red. Used on game-over. */
+  drawFakeWallsRevealed(cellSize, offsetX, offsetY, fakeWalls) {
+    const { ctx } = this;
+    const wt = Math.max(3, Math.round(cellSize * 0.22));
+    const pulse = 0.75 + 0.25 * Math.sin(this.pulse * 6);
+
+    ctx.save();
+    for (const fw of fakeWalls) {
+      if (!fw) continue;
+      const x = offsetX + fw.col * cellSize;
+      const y = offsetY + fw.row * cellSize;
+
+      let rx, ry, rw, rh;
+      if (fw.side === 'right') {
+        rx = x + cellSize - wt; ry = y + wt;
+        rw = 2 * wt;            rh = cellSize - 2 * wt;
+      } else if (fw.side === 'left') {
+        rx = x - wt;  ry = y + wt;
+        rw = 2 * wt;  rh = cellSize - 2 * wt;
+      } else if (fw.side === 'bottom') {
+        rx = x + wt;              ry = y + cellSize - wt;
+        rw = cellSize - 2 * wt;   rh = 2 * wt;
+      } else { // top
+        rx = x + wt;              ry = y - wt;
+        rw = cellSize - 2 * wt;   rh = 2 * wt;
+      }
+
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle   = '#ff2a2a';
+      ctx.shadowColor = '#ff5555';
+      ctx.shadowBlur  = 18;
+      ctx.fillRect(rx, ry, rw, rh);
+
+      ctx.shadowBlur  = 0;
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = Math.max(1.5, cellSize * 0.05);
+      ctx.strokeRect(rx, ry, rw, rh);
+    }
+    ctx.restore();
   }
 
   drawExits(p1ExitCol, p1ExitRow, p2ExitCol, p2ExitRow, cellSize, offsetX, offsetY) {
@@ -285,7 +383,7 @@ export class Renderer {
     ctx.strokeRect(mapX, mapY, MAP, MAP);
 
     // Walls
-    ctx.strokeStyle = WALL_COLOR;
+    ctx.strokeStyle = '#2ec820';
     ctx.lineWidth   = Math.max(0.4, cw * 0.5);
     ctx.beginPath();
     for (let r = 0; r < rows; r++) {
