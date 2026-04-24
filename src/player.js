@@ -102,6 +102,45 @@ export class Player {
     this.lastDx = dx;
     this.lastDy = dy;
 
+    // ── 180° reversal (LEFT↔RIGHT, UP↔DOWN) — instant mid-glide ────────────
+    // Without this, swapping to the opposite direction has to wait for the
+    // current cell glide to finish (~250 ms of "I'm pressing right but the
+    // bug is still going left"). Walls are mutual, so reversing through one
+    // we just passed is always safe.
+    if (this.isMoving && pressing
+        && dx === -this.moveDx && dy === -this.moveDy) {
+      const headingBackToSnap =
+        this.targetCol === this.snapCol && this.targetRow === this.snapRow;
+
+      if (headingBackToSnap) {
+        // We were already reversing toward snap; user reversed AGAIN, so
+        // re-extend the target to (snap + newDir) if that move is legal.
+        const newCol = this.snapCol + dx;
+        const newRow = this.snapRow + dy;
+        const inBounds = newCol >= 0 && newCol < cols
+                      && newRow >= 0 && newRow < rows;
+        if (inBounds
+            && !maze[this.snapRow][this.snapCol].walls[dirToSide(dx, dy)]) {
+          this.targetCol = newCol;
+          this.targetRow = newRow;
+        }
+      } else {
+        // Forward glide → flip the target to the cell we came from.
+        this.targetCol = this.snapCol;
+        this.targetRow = this.snapRow;
+      }
+
+      this.moveDx       = dx;
+      this.moveDy       = dy;
+      this.pressStarted = true;
+      this.repeatMode   = true;
+
+      if      (dx > 0) this.angle = 0;
+      else if (dx < 0) this.angle = Math.PI;
+      else if (dy > 0) this.angle = Math.PI / 2;
+      else             this.angle = -Math.PI / 2;
+    }
+
     // Resolve chain armed on the *previous* frame's arrival (true 1-frame gap).
     if (!this.isMoving && this.commitChainNextFrame && pressing) {
       this.commitChainNextFrame = false;
