@@ -12,8 +12,12 @@ export function generateMaze(cols, rows) {
     }))
   );
 
+  // Random root — always starting carve at (0,0) biases local topology toward
+  // that corner (red) vs bottom-right (blue). Any cell works for a spanning tree.
   const stack = [];
-  let current = grid[0][0];
+  const startCol = Math.floor(Math.random() * cols);
+  const startRow = Math.floor(Math.random() * rows);
+  let current = grid[startRow][startCol];
   current.visited = true;
   let visitedCount = 1;
   const total = rows * cols;
