@@ -1,10 +1,10 @@
-import { generateFairMaze }                      from './maze.js';
-import { Player }                                 from './player.js';
-import { Renderer, HUD_HEIGHT }                  from './renderer.js';
-import { AudioManager }                           from './audio.js';
-import { show, hide, updateWallIndicator }        from './ui.js';
+import { Player }                  from './player.js';
+import { Renderer, HUD_HEIGHT }    from './renderer.js';
+import { AudioManager }            from './audio.js';
+import { show, hide }              from './ui.js';
+import { startLobby }              from './lobby.js';
 
-// ─── Difficulties ─────────────────────────────────────────────────────────────
+// ─── Shared constants ────────────────────────────────────────────────────────
 
 const DIFFICULTIES = {
   easy:   { cols: 15, rows: 11, name: 'EASY' },
@@ -13,168 +13,300 @@ const DIFFICULTIES = {
   expert: { cols: 51, rows: 35, name: 'EXPERT' },
 };
 
-// Player colours
-const P1_COLOR = '#ff4444';
-const P2_COLOR = '#4488ff';
+const PLAYER_COLORS = { p1: '#ff4444', p2: '#4488ff' };
 
-// ─── State machine ───────────────────────────────────────────────────────────
+const S = { LOBBY:'LOBBY', COUNTDOWN:'COUNTDOWN', PLAYING:'PLAYING', WIN:'WIN' };
 
-const S = { MENU:'MENU', COUNTDOWN:'COUNTDOWN', PLAYING:'PLAYING', PAUSED:'PAUSED', WIN:'WIN' };
+const WIN_MODAL_DELAY = 1.5;
 
-let state      = S.MENU;
-let difficulty = 'easy';
-let mazeNum    = 1;
-
-// Game objects
-let maze, p1, p2;
-let cellSize, offsetX, offsetY;
-
-// P1: top-left start → bottom-right exit
-// P2: bottom-right start → top-left exit  (symmetric / fair)
-let p1StartCol, p1StartRow, p1ExitCol, p1ExitRow;
-let p2StartCol, p2StartRow, p2ExitCol, p2ExitRow;
-
-let cdValue  = 3;
-let cdTimer  = 1.0;
-
-// Win-modal timing / toggle state. Players should see the red-flash of the
-// fake walls reveal before the modal covers any of it.
-const WIN_MODAL_DELAY = 1.5; // seconds
-let winModalTimer = 0;       // counts down from WIN_MODAL_DELAY once we enter S.WIN
-let winModalVisible = false; // true once the modal is on screen
-let winModalHidden  = false; // user has collapsed the modal to peek at maze
-
-// Input state — two independent players on same keyboard
-const inp1 = { left:false, right:false, up:false, down:false };
-const inp2 = { left:false, right:false, up:false, down:false };
-
-let lastTs = 0;
-
-// ─── Modules ─────────────────────────────────────────────────────────────────
-
+// ─── Modules ────────────────────────────────────────────────────────────────
 const canvas   = document.getElementById('game-canvas');
 const renderer = new Renderer(canvas);
 const audio    = new AudioManager();
 
-const hudDiff    = document.getElementById('hud-difficulty');
-const hudMazeNum = document.getElementById('hud-maze-num');
+const hudDiff   = document.getElementById('hud-difficulty');
+const hudRoom   = document.getElementById('hud-room-code');
+const hudP1Name = document.getElementById('hud-p1-name');
+const hudP2Name = document.getElementById('hud-p2-name');
 
-// ─── Game actions ─────────────────────────────────────────────────────────────
+// ─── Game session state ─────────────────────────────────────────────────────
 
-function startGame() {
-  const cfg = DIFFICULTIES[difficulty];
-  maze = generateFairMaze(cfg.cols, cfg.rows);
+let state = S.LOBBY;
 
-  const lay  = renderer.layout(cfg.cols, cfg.rows);
-  cellSize   = lay.cellSize;
-  offsetX    = lay.offsetX;
-  offsetY    = lay.offsetY;
+let net, mySlot, peerSlot, isHost;
+let code, difficulty;
 
-  // P1: top-left start, bottom-right exit
-  p1StartCol = 0;           p1StartRow = 0;
-  p1ExitCol  = cfg.cols-1;  p1ExitRow  = cfg.rows-1;
+let maze, cols, rows;
+let cellSize, offsetX, offsetY;
 
-  // P2: bottom-right start, top-left exit  (exactly opposite — fair by symmetry)
-  p2StartCol = cfg.cols-1;  p2StartRow = cfg.rows-1;
-  p2ExitCol  = 0;           p2ExitRow  = 0;
+let p1Start, p1Exit, p2Start, p2Exit;
 
-  p1 = new Player(cellCx(p1StartCol), cellCy(p1StartRow), cellSize, P1_COLOR);
-  p1.setSnap(p1StartCol, p1StartRow);
+let myPlayer   = null;  // local Player instance for prediction
+let myInput    = { left:false, right:false, up:false, down:false };
+let lastSentInput = '';
 
-  p2 = new Player(cellCx(p2StartCol), cellCy(p2StartRow), cellSize, P2_COLOR);
-  p2.setSnap(p2StartCol, p2StartRow);
-  p2.angle = -Math.PI / 2;
+// Latest server snapshot + short interpolation buffer
+let serverState = null; // { p1, p2, lifecycle, tick }
+let opp = null;         // { cx, cy, col, row, angle, bumped, color, radius, snapCol, snapRow }
+let oppTargetCx = 0, oppTargetCy = 0;
 
-  cdValue = 3;
-  cdTimer = 1.0;
+let cdValue = 3;
+let winner = null, winReason = null, winFakeWalls = { p1:null, p2:null };
 
-  hudDiff.textContent    = cfg.name;
-  hudMazeNum.textContent = `MAZE ${mazeNum}`;
+let winModalTimer = 0;
+let winModalVisible = false;
+let winModalHidden  = false;
 
-  updateWallIndicator(1, false);
-  updateWallIndicator(2, false);
+let lastMineFakeWallUsed = false;
+let fakeWallToastUntil = 0;
 
-  hide('menu-screen');
+let lastTs = 0;
+
+// ─── Boot ───────────────────────────────────────────────────────────────────
+
+renderer.resize();
+lastTs = performance.now();
+requestAnimationFrame(loop);
+
+runLobby();
+
+async function runLobby() {
+  state = S.LOBBY;
+  hide('hud');
   hide('win-screen');
-  hide('pause-screen');
+  hide('win-show-btn');
+  const res = await startLobby();
+  audio.init();
+  net = res.net; mySlot = res.slot; peerSlot = mySlot === 'p1' ? 'p2' : 'p1';
+  isHost = res.isHost;
+  code = res.code; difficulty = res.difficulty;
+  bindNetHandlers(res.firstGameMsg);
+}
+
+function bindNetHandlers(firstGameMsg) {
+  // `gameStart` already fired once before lobby resolved — handle it.
+  beginGame(firstGameMsg);
+
+  net.on('gameStart', (m) => beginGame(m));
+
+  net.on('countdown', (m) => {
+    state = S.COUNTDOWN;
+    cdValue = m.value;
+    if (m.value > 0)   audio.playCountdown(m.value);
+    else if (m.value === 0) audio.playStart();
+  });
+
+  net.on('state', (m) => {
+    serverState = m;
+    // Reconcile my own player
+    const mine = m[mySlot];
+    const other = m[peerSlot];
+    if (mine && myPlayer) reconcileMe(mine);
+    if (other) updateOpponent(other);
+    if (m.lifecycle === 'playing' && state !== S.PLAYING) state = S.PLAYING;
+  });
+
+  net.on('win', (m) => {
+    winner        = m.winner;
+    winReason     = m.reason;
+    winFakeWalls  = m.fakeWalls || { p1:null, p2:null };
+    showWinScreen();
+  });
+
+  net.on('peerLeft', () => {
+    if (state === S.COUNTDOWN || state === S.PLAYING) {
+      // Server will also send a `win` message; peerLeft arrives first in
+      // edge cases. Flag the reason here as a fallback.
+      winReason = 'peerLeft';
+    }
+  });
+
+  net.on('forcedMenu', () => {
+    goToMenu();
+  });
+
+  net.on('close', () => {
+    if (state !== S.LOBBY) {
+      // Reset UI back to lobby on socket drop.
+      goToMenu();
+    }
+  });
+}
+
+// ─── Game start / reset ─────────────────────────────────────────────────────
+
+function beginGame(m) {
+  maze       = m.maze;
+  cols       = m.cols;
+  rows       = m.rows;
+  difficulty = m.difficulty;
+  p1Start    = m.p1Start;  p1Exit = m.p1Exit;
+  p2Start    = m.p2Start;  p2Exit = m.p2Exit;
+
+  const lay = renderer.layout(cols, rows);
+  cellSize = lay.cellSize;
+  offsetX  = lay.offsetX;
+  offsetY  = lay.offsetY;
+
+  // Our own Player: render-space instance (uses real pixel cellSize).
+  const myStart = mySlot === 'p1' ? p1Start : p2Start;
+  myPlayer = new Player(
+    cellCx(myStart.col), cellCy(myStart.row),
+    cellSize, PLAYER_COLORS[mySlot]
+  );
+  myPlayer.setSnap(myStart.col, myStart.row);
+  myPlayer.angle = mySlot === 'p1' ? -Math.PI / 2 : -Math.PI / 2;
+
+  // Opponent surrogate — not a Player instance; just enough for the renderer.
+  const oppStart = peerSlot === 'p1' ? p1Start : p2Start;
+  opp = {
+    cx: cellCx(oppStart.col),
+    cy: cellCy(oppStart.row),
+    angle: -Math.PI / 2,
+    color: PLAYER_COLORS[peerSlot],
+    radius: cellSize * 0.22,
+    bumpTimer: 0,
+    snapCol: oppStart.col,
+    snapRow: oppStart.row,
+    fakeWall: null,
+  };
+  oppTargetCx = opp.cx;
+  oppTargetCy = opp.cy;
+
+  // HUD
+  hudDiff.textContent = DIFFICULTIES[difficulty].name;
+  hudRoom.textContent = `ROOM ${code}`;
+  hudP1Name.textContent = mySlot === 'p1' ? 'PLAYER 1 (YOU)' : 'PLAYER 1';
+  hudP2Name.textContent = mySlot === 'p2' ? 'PLAYER 2 (YOU)' : 'PLAYER 2';
+
+  // Reset input + win state
+  myInput = { left:false, right:false, up:false, down:false };
+  lastSentInput = '';
+  winner = null; winReason = null;
+  winFakeWalls = { p1:null, p2:null };
+  winModalVisible = false; winModalHidden = false; winModalTimer = 0;
+  lastMineFakeWallUsed = false;
+  fakeWallToastUntil = 0;
+  cdValue = 3;
+
+  // Drop focus from any lingering lobby button so Space goes to the game,
+  // not to firing a hidden button's click handler.
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur?.();
+  }
+
+  hide('win-screen');
+  hide('win-show-btn');
+  // Make sure the lobby overlays are dismissed so the race is visible.
+  hide('menu-screen');
+  hide('create-screen');
+  hide('join-screen');
+  hide('room-screen');
   show('hud');
 
   state = S.COUNTDOWN;
-  audio.playCountdown(3);
 }
 
-function restartGame() {
-  hide('pause-screen');
-  hide('win-screen');
-  hide('win-show-btn');
+// ─── Reconciliation / opponent ──────────────────────────────────────────────
 
-  const lay = renderer.layout(DIFFICULTIES[difficulty].cols, DIFFICULTIES[difficulty].rows);
-  cellSize  = lay.cellSize;
-  offsetX   = lay.offsetX;
-  offsetY   = lay.offsetY;
+function reconcileMe(mine) {
+  // Detect the placer's own fake wall succeeding (false → true on MY slot).
+  if (mine.fakeWallUsed && !lastMineFakeWallUsed) {
+    audio.tone(540, 0.10, 'square', 0.18);
+    audio.tone(360, 0.18, 'square', 0.16, 0.05);
+    showFakeWallToast();
+  }
+  lastMineFakeWallUsed = !!mine.fakeWallUsed;
 
-  p1.reposition(cellCx(p1StartCol), cellCy(p1StartRow), cellSize);
-  p1.setSnap(p1StartCol, p1StartRow);
-  p1.resetFakeWall();
+  // Server reports in cell units (cx = col + 0.5). Convert to pixels.
+  const sx = offsetX + mine.cx * cellSize;
+  const sy = offsetY + mine.cy * cellSize;
+  const cellDrift = Math.hypot(sx - myPlayer.cx, sy - myPlayer.cy) / cellSize;
 
-  p2.reposition(cellCx(p2StartCol), cellCy(p2StartRow), cellSize);
-  p2.setSnap(p2StartCol, p2StartRow);
-  p2.resetFakeWall();
-  p2.angle = -Math.PI / 2;
+  const snapDiff = mine.col !== myPlayer.snapCol || mine.row !== myPlayer.snapRow;
+  const tgtDiff  = mine.tCol !== myPlayer.targetCol || mine.tRow !== myPlayer.targetRow;
 
-  updateWallIndicator(1, false);
-  updateWallIndicator(2, false);
+  function applyAuth() {
+    myPlayer.cx        = sx;
+    myPlayer.cy        = sy;
+    myPlayer.snapCol   = mine.col;
+    myPlayer.snapRow   = mine.row;
+    myPlayer.targetCol = mine.tCol;
+    myPlayer.targetRow = mine.tRow;
+    myPlayer.isMoving  = !!mine.moving;
+    myPlayer.moving    = !!mine.moving;
+    myPlayer.angle     = mine.angle;
+    // Do not call reposition() — it clears trail[] and causes visible pops.
+  }
 
-  cdValue = 3;
-  cdTimer = 1.0;
+  // When the server says we are idle on a cell, treat that as ground truth so
+  // spectators (who only see server snapshots) always match your resting grid.
+  if (!mine.moving) {
+    if (snapDiff || tgtDiff || cellDrift > 0.12) applyAuth();
+    return;
+  }
 
-  state = S.COUNTDOWN;
-  audio.playCountdown(3);
+  // Server mid-glide but we already snapped locally — we predicted one frame
+  // ahead; pull back so we never sit on a different square than the opponent sees.
+  if (mine.moving && snapDiff && !myPlayer.isMoving) {
+    applyAuth();
+    return;
+  }
+
+  // Different move intent (wrong target / wall disagreement).
+  if (mine.moving && tgtDiff) {
+    applyAuth();
+    return;
+  }
+
+  // Same path but render drift from 30Hz sim vs 60Hz client (still cap so we
+  // never stay ~1 cell off, which reads as "wrong square" to the peer).
+  if (mine.moving && cellDrift > 0.48) applyAuth();
 }
 
-function nextMaze() {
-  mazeNum++;
-  hide('win-screen');
-  hide('win-show-btn');
-  startGame();
+function showFakeWallToast() {
+  fakeWallToastUntil = performance.now() + 900;
 }
 
-function goToMenu() {
-  state = S.MENU;
-  hide('win-screen');
-  hide('win-show-btn');
-  hide('pause-screen');
-  hide('hud');
-  show('menu-screen');
-  mazeNum = 1;
+function updateOpponent(other) {
+  oppTargetCx       = offsetX + other.cx * cellSize;
+  oppTargetCy       = offsetY + other.cy * cellSize;
+  opp.angle         = other.angle;
+  opp.snapCol       = other.col;
+  opp.snapRow       = other.row;
+  opp.bumpTimer     = other.bumped ? 0.08 : 0;
+  opp.fakeWall      = other.fakeWall;
+  opp.radius        = cellSize * 0.22;
 }
 
-function pause() {
-  if (state !== S.PLAYING) return;
-  state = S.PAUSED;
-  show('pause-screen');
-}
+// ─── Win screen ─────────────────────────────────────────────────────────────
 
-function resume() {
-  if (state !== S.PAUSED) return;
-  state = S.PLAYING;
-  hide('pause-screen');
-  lastTs = performance.now();
-}
-
-function triggerWin(winner) {
+function showWinScreen() {
   state = S.WIN;
   audio.playWin();
 
   const winTitle = document.getElementById('win-title');
-  if (winner === 1) {
-    winTitle.textContent = 'PLAYER 1 WINS!';
-    winTitle.className   = 'win-title p1';
+  const iWon = winner === mySlot;
+  const msg = winReason === 'peerLeft'
+    ? (iWon ? 'OPPONENT LEFT — YOU WIN' : 'YOU LEFT')
+    : (iWon ? 'YOU WIN!' : 'YOU LOSE');
+  winTitle.textContent = msg;
+  winTitle.className = `win-title ${winner === 'p1' ? 'p1' : 'p2'}`;
+
+  // Only the host may start a rematch or next maze — hide those actions for player 2.
+  if (isHost) {
+    show('next-maze-btn');
+    show('retry-btn');
+    hide('win-host-only');
   } else {
-    winTitle.textContent = 'PLAYER 2 WINS!';
-    winTitle.className   = 'win-title p2';
+    hide('next-maze-btn');
+    hide('retry-btn');
+    const hostOnly = document.getElementById('win-host-only');
+    hostOnly.textContent = 'Only the host can start a new maze or rematch.';
+    show('win-host-only');
   }
-  // Hold the modal off screen for a beat so the fake-wall reveal lands first.
+
+  // Delay the modal so the fake-wall reveal plays first.
   hide('win-screen');
   hide('win-show-btn');
   winModalVisible = false;
@@ -182,27 +314,29 @@ function triggerWin(winner) {
   winModalTimer   = WIN_MODAL_DELAY;
 }
 
-function showWinModal() {
-  winModalVisible = true;
-  winModalHidden  = false;
-  show('win-screen');
-  hide('win-show-btn');
-}
-
-function hideWinModal() {
-  winModalVisible = false;
-  winModalHidden  = true;
-  hide('win-screen');
-  show('win-show-btn');
-}
-
+function showWinModal()  { winModalVisible = true;  winModalHidden = false; show('win-screen'); hide('win-show-btn'); }
+function hideWinModal()  { winModalVisible = false; winModalHidden = true;  hide('win-screen'); show('win-show-btn'); }
 function toggleWinModal() {
   if (state !== S.WIN || winModalTimer > 0) return;
-  if (winModalVisible) hideWinModal();
-  else                 showWinModal();
+  if (winModalVisible) hideWinModal(); else showWinModal();
 }
 
-// ─── Game loop ────────────────────────────────────────────────────────────────
+function goToMenu() {
+  // Set before close() so the socket `close` handler does not call goToMenu again.
+  state = S.LOBBY;
+  try { net?.send({ type: 'leave' }); } catch {}
+  try { net?.close(); } catch {}
+  hide('hud');
+  hide('win-screen');
+  hide('win-show-btn');
+  // Reset URL
+  const url = new URL(location.href);
+  url.searchParams.delete('room');
+  history.replaceState({}, '', url.toString());
+  location.reload();
+}
+
+// ─── Main loop ──────────────────────────────────────────────────────────────
 
 function update(dt) {
   renderer.update(dt);
@@ -212,75 +346,98 @@ function update(dt) {
     if (winModalTimer <= 0) showWinModal();
   }
 
-  if (state === S.COUNTDOWN) {
-    cdTimer -= dt;
-    if (cdTimer <= 0) {
-      cdValue--;
-      if (cdValue < 0) {
-        state = S.PLAYING;
-        audio.playStart();
-      } else {
-        cdTimer = cdValue === 0 ? 0.55 : 1.0;
-        audio.playCountdown(cdValue);
-      }
-    }
+  if (state !== S.PLAYING) {
+    // Even when paused/countdown, keep interpolating the opponent so they
+    // arrive smoothly at their start cell once we hit PLAYING.
+    lerpOpp(dt);
     return;
   }
 
-  if (state !== S.PLAYING) return;
-
-
-  // Update players (each passes opponent's fake wall for collision)
-  const p1PrevBump = p1.bumpTimer;
-  const p2PrevBump = p2.bumpTimer;
-
-  p1.update(dt, inp1, maze, cellSize, offsetX, offsetY, p2.fakeWall);
-  p2.update(dt, inp2, maze, cellSize, offsetX, offsetY, p1.fakeWall);
-
-  if (p1.bumpTimer > 0 && p1PrevBump <= 0) audio.playWallBump();
-  if (p2.bumpTimer > 0 && p2PrevBump <= 0) audio.playWallBump();
-
-  // Win checks — P1 reaches bottom-right, P2 reaches top-left
-  const p1Won = p1.isAtExit(p1ExitCol, p1ExitRow);
-  const p2Won = p2.isAtExit(p2ExitCol, p2ExitRow);
-
-  if (p1Won && p2Won) {
-    // Simultaneous — whoever had less time wins (both times are equal since they start together)
-    triggerWin(1);
-  } else if (p1Won) {
-    triggerWin(1);
-  } else if (p2Won) {
-    triggerWin(2);
+  // Local prediction for my player
+  if (myPlayer && maze) {
+    myPlayer.update(dt, myInput, maze, cellSize, offsetX, offsetY, null);
   }
+
+  // Lerp opponent toward latest server position
+  lerpOpp(dt);
+
+  // Send input if changed
+  maybeSendInput();
+}
+
+function lerpOpp(dt) {
+  if (!opp) return;
+  const k = Math.min(1, dt * 18); // ~55 ms catch-up
+  opp.cx += (oppTargetCx - opp.cx) * k;
+  opp.cy += (oppTargetCy - opp.cy) * k;
+  opp.bumpTimer = Math.max(0, opp.bumpTimer - dt);
+}
+
+function maybeSendInput() {
+  const s = `${myInput.left ? 1:0}${myInput.right ? 1:0}${myInput.up ? 1:0}${myInput.down ? 1:0}`;
+  if (s === lastSentInput) return;
+  lastSentInput = s;
+  net?.send({ type: 'input', ...myInput });
 }
 
 function render() {
   renderer.clear();
-  if (state === S.MENU) return;
+  if (state === S.LOBBY || !maze) return;
 
-  renderer.drawMaze(maze, cellSize, offsetX, offsetY, p1.fakeWall, p2.fakeWall);
-  renderer.drawExits(p1ExitCol, p1ExitRow, p2ExitCol, p2ExitRow, cellSize, offsetX, offsetY);
+  const p1FakeWall = serverState?.p1?.fakeWall ?? null;
+  const p2FakeWall = serverState?.p2?.fakeWall ?? null;
 
-  renderer.drawTrail(p1.trail, P1_COLOR);
-  renderer.drawTrail(p2.trail, P2_COLOR);
+  renderer.drawMaze(maze, cellSize, offsetX, offsetY, p1FakeWall, p2FakeWall);
+  renderer.drawExits(p1Exit.col, p1Exit.row, p2Exit.col, p2Exit.row, cellSize, offsetX, offsetY);
 
-  renderer.drawPlayer(p1);
-  renderer.drawPlayer(p2);
+  // Trails
+  if (myPlayer) renderer.drawTrail(myPlayer.trail, myPlayer.color);
+
+  // Players — place by slot so P1 renders underneath P2 consistently.
+  const me  = myPlayer;
+  const them = opp;
+  const p1Render = mySlot === 'p1' ? me : them;
+  const p2Render = mySlot === 'p2' ? me : them;
+  if (p1Render) renderer.drawPlayer(p1Render);
+  if (p2Render) renderer.drawPlayer(p2Render);
 
   if (state === S.WIN) {
-    renderer.drawFakeWallsRevealed(cellSize, offsetX, offsetY, [p1.fakeWall, p2.fakeWall]);
+    renderer.drawFakeWallsRevealed(cellSize, offsetX, offsetY, [winFakeWalls.p1, winFakeWalls.p2]);
   }
 
   renderer.drawVignette();
 
-  const cfg = DIFFICULTIES[difficulty];
-  if (cfg.cols >= 37) {
-    renderer.drawMinimap(maze, p1, p2,
-      p1ExitCol, p1ExitRow, p2ExitCol, p2ExitRow,
+  if (cols >= 37 && me && them) {
+    renderer.drawMinimap(maze,
+      mySlot === 'p1' ? me : them,
+      mySlot === 'p2' ? me : them,
+      p1Exit.col, p1Exit.row, p2Exit.col, p2Exit.row,
       cellSize, offsetX, offsetY);
   }
 
   if (state === S.COUNTDOWN) renderer.drawCountdown(cdValue);
+
+  drawFakeWallToast();
+}
+
+function drawFakeWallToast() {
+  const now = performance.now();
+  if (now > fakeWallToastUntil || !myPlayer) return;
+  const remaining = (fakeWallToastUntil - now) / 900;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, remaining * 1.4);
+  ctx.font = `bold ${Math.max(14, cellSize * 0.55)}px 'Fredoka One', cursive`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const x = myPlayer.cx;
+  const y = myPlayer.cy - cellSize * (1.6 - 0.6 * remaining);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillStyle   = '#ffd54a';
+  ctx.strokeText('FAKE WALL!', x, y);
+  ctx.fillText  ('FAKE WALL!', x, y);
+  ctx.restore();
 }
 
 function loop(ts) {
@@ -291,118 +448,78 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-// ─── Input ────────────────────────────────────────────────────────────────────
+// ─── Input ──────────────────────────────────────────────────────────────────
 
-window.addEventListener('keydown', e => {
+window.addEventListener('keydown', (e) => {
   audio.resume();
 
-  // Player 1 — WASD
+  // Movement: Arrows OR WASD — whichever slot you are, you control one bug.
   switch (e.code) {
-    case 'KeyA': inp1.left  = true; break;
-    case 'KeyD': inp1.right = true; break;
-    case 'KeyW': inp1.up    = true; break;
-    case 'KeyS': inp1.down  = true; break;
-    case 'KeyQ':
+    case 'ArrowLeft':  case 'KeyA': myInput.left  = true; break;
+    case 'ArrowRight': case 'KeyD': myInput.right = true; break;
+    case 'ArrowUp':    case 'KeyW': myInput.up    = true; break;
+    case 'ArrowDown':  case 'KeyS': myInput.down  = true; break;
+    case 'Space':
+      // Always preventDefault first so Space never falls through to a
+      // hidden lobby button click or page scroll.
+      e.preventDefault();
       if (state === S.PLAYING) {
-        const placed = p1.placeFakeWall(maze);
-        if (placed) updateWallIndicator(1, true);
+        net?.send({ type: 'action', action: 'fakeWall' });
+      } else if (state === S.WIN) {
+        toggleWinModal();
       }
       break;
   }
 
-  // Player 2 — Arrow keys
-  switch (e.code) {
-    case 'ArrowLeft':  inp2.left  = true; break;
-    case 'ArrowRight': inp2.right = true; break;
-    case 'ArrowUp':    inp2.up    = true; break;
-    case 'ArrowDown':  inp2.down  = true; break;
-    case 'Slash':
-      if (state === S.PLAYING) {
-        const placed = p2.placeFakeWall(maze);
-        if (placed) updateWallIndicator(2, true);
-      }
-      break;
-  }
-
-  // Pause
-  if (e.code === 'KeyP' || e.code === 'Escape') {
-    if      (state === S.PLAYING) pause();
-    else if (state === S.PAUSED)  resume();
-  }
-
-  // Toggle winner modal so players can peek at the revealed fake walls.
-  if (e.code === 'Space' && state === S.WIN) {
-    e.preventDefault();
-    toggleWinModal();
-  }
-
-  // Prevent page scrolling
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
 });
 
-window.addEventListener('keyup', e => {
+window.addEventListener('keyup', (e) => {
   switch (e.code) {
-    case 'KeyA': inp1.left  = false; break;
-    case 'KeyD': inp1.right = false; break;
-    case 'KeyW': inp1.up    = false; break;
-    case 'KeyS': inp1.down  = false; break;
-
-    case 'ArrowLeft':  inp2.left  = false; break;
-    case 'ArrowRight': inp2.right = false; break;
-    case 'ArrowUp':    inp2.up    = false; break;
-    case 'ArrowDown':  inp2.down  = false; break;
+    case 'ArrowLeft':  case 'KeyA': myInput.left  = false; break;
+    case 'ArrowRight': case 'KeyD': myInput.right = false; break;
+    case 'ArrowUp':    case 'KeyW': myInput.up    = false; break;
+    case 'ArrowDown':  case 'KeyS': myInput.down  = false; break;
   }
 });
 
-// ─── UI listeners ─────────────────────────────────────────────────────────────
+// ─── UI listeners ───────────────────────────────────────────────────────────
 
-document.querySelectorAll('.diff-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    difficulty = btn.dataset.diff;
-  });
-});
-
-document.getElementById('start-btn').addEventListener('click',     () => { audio.init(); startGame(); });
-document.getElementById('next-maze-btn').addEventListener('click',  nextMaze);
-document.getElementById('retry-btn').addEventListener('click',      restartGame);
+document.getElementById('next-maze-btn').addEventListener('click',  () => { if (isHost) net?.send({ type: 'next' });   });
+document.getElementById('retry-btn').addEventListener('click',      () => { if (isHost) net?.send({ type: 'rematch' }); });
 document.getElementById('menu-btn').addEventListener('click',       goToMenu);
-document.getElementById('resume-btn').addEventListener('click',     resume);
-document.getElementById('restart-btn').addEventListener('click',    startGame);
-document.getElementById('pause-menu-btn').addEventListener('click', goToMenu);
 document.getElementById('win-hide-btn').addEventListener('click',   hideWinModal);
 document.getElementById('win-show-btn').addEventListener('click',   showWinModal);
 
-// ─── Resize ───────────────────────────────────────────────────────────────────
+// ─── Resize ─────────────────────────────────────────────────────────────────
 
 window.addEventListener('resize', () => {
   renderer.resize();
-  if (!maze || !p1 || !p2) return;
-
-  const cfg = DIFFICULTIES[difficulty];
-  const lay = renderer.layout(cfg.cols, cfg.rows);
-
-  // Preserve maze-cell position using snap coords (always accurate)
+  if (!maze) return;
+  const lay = renderer.layout(cols, rows);
   cellSize = lay.cellSize;
   offsetX  = lay.offsetX;
   offsetY  = lay.offsetY;
 
-  const sc1 = clamp(p1.snapCol, 0, cfg.cols-1), sr1 = clamp(p1.snapRow, 0, cfg.rows-1);
-  const sc2 = clamp(p2.snapCol, 0, cfg.cols-1), sr2 = clamp(p2.snapRow, 0, cfg.rows-1);
-  p1.reposition(cellCx(sc1), cellCy(sr1), cellSize); p1.setSnap(sc1, sr1);
-  p2.reposition(cellCx(sc2), cellCy(sr2), cellSize); p2.setSnap(sc2, sr2);
+  if (myPlayer) {
+    const sc = clamp(myPlayer.snapCol, 0, cols - 1);
+    const sr = clamp(myPlayer.snapRow, 0, rows - 1);
+    myPlayer.reposition(cellCx(sc), cellCy(sr), cellSize);
+    myPlayer.setSnap(sc, sr);
+  }
+  if (opp) {
+    const sc = clamp(opp.snapCol, 0, cols - 1);
+    const sr = clamp(opp.snapRow, 0, rows - 1);
+    opp.cx = cellCx(sc);
+    opp.cy = cellCy(sr);
+    opp.radius = cellSize * 0.22;
+    oppTargetCx = opp.cx;
+    oppTargetCy = opp.cy;
+  }
 });
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function cellCx(col) { return offsetX + col * cellSize + cellSize / 2; }
 function cellCy(row) { return offsetY + row * cellSize + cellSize / 2; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-// ─── Boot ─────────────────────────────────────────────────────────────────────
-
-renderer.resize();
-show('menu-screen');
-lastTs = performance.now();
-requestAnimationFrame(loop);

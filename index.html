@@ -17,19 +17,17 @@
     <div id="hud" class="hidden">
       <div class="hud-player p1">
         <span class="hud-pip p1-pip">▲</span>
-        <span class="hud-name">PLAYER 1</span>
-        <span class="hud-label">WASD · Q=FAKE WALL</span>
+        <span id="hud-p1-name" class="hud-name">PLAYER 1</span>
       </div>
 
       <div class="hud-center">
-        <span id="hud-difficulty" class="hud-diff">EASY</span>
-        <span id="hud-maze-num" class="hud-maze">MAZE 1</span>
+        <span id="hud-difficulty" class="hud-diff">MEDIUM</span>
+        <span id="hud-room-code" class="hud-maze">ROOM ····</span>
       </div>
 
       <div class="hud-player p2">
         <span class="hud-pip p2-pip">▲</span>
-        <span class="hud-name">PLAYER 2</span>
-        <span class="hud-label">ARROWS · /=FAKE WALL</span>
+        <span id="hud-p2-name" class="hud-name">PLAYER 2</span>
       </div>
     </div>
 
@@ -44,45 +42,96 @@
         <div class="rules-box">
           <div class="rule-col p1-col">
             <div class="rule-pip p1-pip-lg">▲</div>
-            <strong>PLAYER 1</strong>
-            <p>WASD to move</p>
-            <p><kbd>Q</kbd> — place fake wall</p>
-            <p>Top-left → Bottom-right</p>
+            <strong>HOW IT WORKS</strong>
+            <p>Race your opponent online</p>
+            <p>Arrow keys or WASD to move</p>
+            <p><kbd>Space</kbd> — place one fake wall</p>
+            <p>First to the other side wins</p>
           </div>
-          <div class="rule-divider">VS</div>
-          <div class="rule-col p2-col">
-            <div class="rule-pip p2-pip-lg">▲</div>
-            <strong>PLAYER 2</strong>
-            <p>Arrow keys to move</p>
-            <p><kbd>/</kbd> — place fake wall</p>
-            <p>Bottom-right → Top-left</p>
+        </div>
+
+        <div class="menu-actions">
+          <button id="create-btn" class="primary-btn">CREATE ROOM</button>
+          <button id="join-btn" class="secondary-btn">JOIN ROOM</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Create Screen ───────────────────────────────────────────── -->
+    <div id="create-screen" class="screen hidden">
+      <div class="screen-content narrow">
+        <h2 class="screen-title">CREATE ROOM</h2>
+        <p class="lobby-blurb">A 4-letter code will be created for your friend.</p>
+        <p id="create-error" class="form-error"></p>
+        <div class="form-actions">
+          <button id="create-go-btn" class="primary-btn">CREATE</button>
+          <button id="create-back-btn" class="secondary-btn">BACK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Join Screen ─────────────────────────────────────────────── -->
+    <div id="join-screen" class="screen hidden">
+      <div class="screen-content narrow">
+        <h2 class="screen-title">JOIN ROOM</h2>
+        <label class="field">
+          <span class="field-label">ROOM CODE</span>
+          <input id="join-code" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" class="code-input" />
+        </label>
+        <p id="join-error" class="form-error"></p>
+        <div class="form-actions">
+          <button id="join-go-btn" class="primary-btn">JOIN</button>
+          <button id="join-back-btn" class="secondary-btn">BACK</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Room Screen (lobby between Create/Join and gameStart) ───── -->
+    <div id="room-screen" class="screen hidden">
+      <div class="screen-content">
+        <h2 class="screen-title">ROOM</h2>
+
+        <div class="room-code-block">
+          <span class="field-label">CODE</span>
+          <span id="room-code-value" class="room-code">····</span>
+        </div>
+
+        <div class="room-invite">
+          <span class="field-label">SHARE LINK</span>
+          <div class="room-invite-row">
+            <code id="room-invite-url" class="invite-url">…</code>
+            <button id="room-copy-btn" class="secondary-btn small">COPY</button>
+          </div>
+        </div>
+
+        <div class="room-players">
+          <div id="room-slot-p1" class="room-slot">
+            <span class="hud-pip p1-pip">▲</span>
+            <span id="room-p1-label" class="room-slot-name">PLAYER 1 — waiting…</span>
+          </div>
+          <div id="room-slot-p2" class="room-slot">
+            <span class="hud-pip p2-pip">▲</span>
+            <span id="room-p2-label" class="room-slot-name">PLAYER 2 — waiting…</span>
           </div>
         </div>
 
         <div class="difficulty-select">
-          <h3 class="section-label">SELECT DIFFICULTY</h3>
-          <div class="difficulty-buttons">
-            <button class="diff-btn active" data-diff="easy">
-              <span class="diff-name">EASY</span>
-              <span class="diff-size">15 × 11</span>
-            </button>
-            <button class="diff-btn" data-diff="medium">
-              <span class="diff-name">MEDIUM</span>
-              <span class="diff-size">25 × 17</span>
-            </button>
-            <button class="diff-btn" data-diff="hard">
-              <span class="diff-name">HARD</span>
-              <span class="diff-size">37 × 25</span>
-            </button>
-            <button class="diff-btn" data-diff="expert">
-              <span class="diff-name">EXPERT</span>
-              <span class="diff-size">51 × 35</span>
-            </button>
+          <h3 class="section-label">DIFFICULTY</h3>
+          <div class="difficulty-buttons difficulty-radios">
+            <label class="diff-btn"><input type="radio" name="room-diff" value="easy"><span class="diff-name">EASY</span><span class="diff-size">15 × 11</span></label>
+            <label class="diff-btn"><input type="radio" name="room-diff" value="medium" checked><span class="diff-name">MEDIUM</span><span class="diff-size">25 × 17</span></label>
+            <label class="diff-btn"><input type="radio" name="room-diff" value="hard"><span class="diff-name">HARD</span><span class="diff-size">37 × 25</span></label>
+            <label class="diff-btn"><input type="radio" name="room-diff" value="expert"><span class="diff-name">EXPERT</span><span class="diff-size">51 × 35</span></label>
           </div>
         </div>
 
-        <button id="start-btn" class="primary-btn">START RACE</button>
-        <p class="controls-hint">P or Esc to pause during game</p>
+        <p id="room-status" class="room-status">Waiting for players…</p>
+        <p id="room-error" class="form-error"></p>
+
+        <div class="form-actions">
+          <button id="room-start-btn" class="primary-btn" disabled>WAITING FOR HOST…</button>
+          <button id="room-leave-btn" class="secondary-btn">LEAVE</button>
+        </div>
       </div>
     </div>
 
@@ -97,23 +146,11 @@
           <button id="retry-btn" class="secondary-btn">REMATCH</button>
           <button id="menu-btn" class="secondary-btn">MAIN MENU</button>
         </div>
+        <p id="win-host-only" class="win-host-only hidden">Waiting for host…</p>
       </div>
     </div>
 
-    <!-- Floating pill shown when the win card is collapsed -->
     <button id="win-show-btn" class="win-show-btn hidden" title="Show results (space)">SHOW RESULTS</button>
-
-    <!-- ── Pause Screen ───────────────────────────────────────────── -->
-    <div id="pause-screen" class="screen hidden">
-      <div class="screen-content">
-        <h2 class="pause-title">PAUSED</h2>
-        <div class="pause-buttons">
-          <button id="resume-btn" class="primary-btn">RESUME</button>
-          <button id="restart-btn" class="secondary-btn">RESTART</button>
-          <button id="pause-menu-btn" class="secondary-btn">MAIN MENU</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <script type="module" src="src/main.js"></script>

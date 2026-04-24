@@ -477,4 +477,204 @@ kbd {
   align-items: center;
 }
 
+/* ── Lobby / online screens ─────────────────────────────────────────────── */
+
+.screen-content.narrow { max-width: 420px; }
+
+.screen-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(26px, 4vw, 36px);
+  letter-spacing: 3px;
+  color: #f0ddb0;
+  margin-bottom: 18px;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+}
+
+.menu-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  margin-top: 8px;
+}
+.menu-actions .primary-btn,
+.menu-actions .secondary-btn { width: 220px; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  gap: 6px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.field-label {
+  font-family: 'Fredoka One', cursive;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: rgba(240, 210, 150, 0.55);
+}
+
+.field input {
+  width: 100%;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  padding: 10px 14px;
+  background: rgba(20, 8, 0, 0.6);
+  border: 2px solid rgba(120, 70, 20, 0.6);
+  border-radius: 8px;
+  color: #f0ddb0;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.field input:focus { border-color: #5ec832; }
+
+.lobby-blurb {
+  font-size: 13px;
+  color: rgba(240, 210, 150, 0.65);
+  letter-spacing: 0.5px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.code-input {
+  text-transform: uppercase;
+  letter-spacing: 14px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 28px;
+  text-align: center;
+  padding-left: 20px;
+}
+
+.form-error {
+  min-height: 16px;
+  font-size: 12px;
+  color: #ff8a8a;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* Room lobby */
+
+.room-code-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.room-code {
+  font-family: 'Fredoka One', cursive;
+  font-size: 48px;
+  letter-spacing: 8px;
+  color: #f5c842;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+}
+
+.room-invite {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.room-invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+.invite-url {
+  font-family: 'Nunito', monospace;
+  font-size: 12px;
+  color: rgba(240, 210, 150, 0.75);
+  background: rgba(20, 8, 0, 0.6);
+  border: 1px solid rgba(120, 70, 20, 0.5);
+  border-radius: 6px;
+  padding: 6px 10px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+}
+.secondary-btn.small {
+  font-size: 11px;
+  padding: 6px 12px;
+  margin: 0;
+}
+
+.room-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 16px;
+}
+.room-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(20, 8, 0, 0.5);
+  border: 1px solid rgba(120, 70, 20, 0.5);
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+.room-slot-name {
+  font-family: 'Fredoka One', cursive;
+  font-size: 15px;
+  letter-spacing: 1px;
+  color: rgba(240, 210, 150, 0.7);
+}
+
+.room-status {
+  font-size: 12px;
+  color: rgba(240, 210, 150, 0.55);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.difficulty-radios .diff-btn { cursor: pointer; }
+.difficulty-radios input[type="radio"] { display: none; }
+.difficulty-radios .diff-btn:has(input:checked) {
+  background: rgba(30, 100, 16, 0.9);
+  border-color: #5ec832;
+  box-shadow: 0 3px 12px rgba(50,160,20,0.35);
+  color: #e8ffcc;
+}
+.difficulty-radios .diff-btn:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-btn:disabled,
+.primary-btn[disabled] {
+  background: rgba(60, 60, 60, 0.7);
+  border-bottom-color: rgba(0, 0, 0, 0.35);
+  color: rgba(240, 210, 150, 0.45);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.win-host-only {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(240, 210, 150, 0.5);
+}
+
 .hidden { display: none !important; }
