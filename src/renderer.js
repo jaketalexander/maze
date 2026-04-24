@@ -138,12 +138,23 @@ export class Renderer {
           const iy   = y + wt;
           const iw   = cellSize - 2 * wt;
 
+          // Fake walls must cast shadows exactly like real walls —
+          // otherwise a missing drop-shadow gives away the deception.
+          // `hasFW` already handles the mirror pairs (e.g. a fake wall
+          // stored on cell A side='bottom' is also the 'top' of cell B).
+          const hasTop = cell.walls.top
+            || hasFW(p1FakeWall, c, r, 'top')
+            || hasFW(p2FakeWall, c, r, 'top');
+          const hasLeft = cell.walls.left
+            || hasFW(p1FakeWall, c, r, 'left')
+            || hasFW(p2FakeWall, c, r, 'left');
+
           // Wall above this cell → shadow at top of this cell's interior.
-          if (cell.walls.top) {
+          if (hasTop) {
             ctx.fillRect(ix, iy, iw, sw);
           }
           // Wall to the left of this cell → shadow at left of interior.
-          if (cell.walls.left) {
+          if (hasLeft) {
             ctx.fillRect(ix, iy, sw, iw);
           }
           // 4-way open junction. The wt×wt corner piece at (x, y) is
@@ -153,7 +164,7 @@ export class Renderer {
           // corridor continuations stop short of the exact (ix, iy)
           // pixel. Fill the sw×sw gap so corners "continue black around
           // and touch" at every junction.
-          if (!cell.walls.top && !cell.walls.left) {
+          if (!hasTop && !hasLeft) {
             ctx.fillRect(ix, iy, sw, sw);
           }
 

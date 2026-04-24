@@ -37,6 +37,13 @@ let p2StartCol, p2StartRow, p2ExitCol, p2ExitRow;
 let cdValue  = 3;
 let cdTimer  = 1.0;
 
+// Win-modal timing / toggle state. Players should see the red-flash of the
+// fake walls reveal before the modal covers any of it.
+const WIN_MODAL_DELAY = 1.5; // seconds
+let winModalTimer = 0;       // counts down from WIN_MODAL_DELAY once we enter S.WIN
+let winModalVisible = false; // true once the modal is on screen
+let winModalHidden  = false; // user has collapsed the modal to peek at maze
+
 // Input state — two independent players on same keyboard
 const inp1 = { left:false, right:false, up:false, down:false };
 const inp2 = { left:false, right:false, up:false, down:false };
@@ -99,6 +106,7 @@ function startGame() {
 function restartGame() {
   hide('pause-screen');
   hide('win-screen');
+  hide('win-show-btn');
 
   const lay = renderer.layout(DIFFICULTIES[difficulty].cols, DIFFICULTIES[difficulty].rows);
   cellSize  = lay.cellSize;
@@ -127,12 +135,14 @@ function restartGame() {
 function nextMaze() {
   mazeNum++;
   hide('win-screen');
+  hide('win-show-btn');
   startGame();
 }
 
 function goToMenu() {
   state = S.MENU;
   hide('win-screen');
+  hide('win-show-btn');
   hide('pause-screen');
   hide('hud');
   show('menu-screen');
@@ -164,13 +174,43 @@ function triggerWin(winner) {
     winTitle.textContent = 'PLAYER 2 WINS!';
     winTitle.className   = 'win-title p2';
   }
+  // Hold the modal off screen for a beat so the fake-wall reveal lands first.
+  hide('win-screen');
+  hide('win-show-btn');
+  winModalVisible = false;
+  winModalHidden  = false;
+  winModalTimer   = WIN_MODAL_DELAY;
+}
+
+function showWinModal() {
+  winModalVisible = true;
+  winModalHidden  = false;
   show('win-screen');
+  hide('win-show-btn');
+}
+
+function hideWinModal() {
+  winModalVisible = false;
+  winModalHidden  = true;
+  hide('win-screen');
+  show('win-show-btn');
+}
+
+function toggleWinModal() {
+  if (state !== S.WIN || winModalTimer > 0) return;
+  if (winModalVisible) hideWinModal();
+  else                 showWinModal();
 }
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
 
 function update(dt) {
   renderer.update(dt);
+
+  if (state === S.WIN && !winModalVisible && !winModalHidden) {
+    winModalTimer -= dt;
+    if (winModalTimer <= 0) showWinModal();
+  }
 
   if (state === S.COUNTDOWN) {
     cdTimer -= dt;
@@ -290,6 +330,12 @@ window.addEventListener('keydown', e => {
     else if (state === S.PAUSED)  resume();
   }
 
+  // Toggle winner modal so players can peek at the revealed fake walls.
+  if (e.code === 'Space' && state === S.WIN) {
+    e.preventDefault();
+    toggleWinModal();
+  }
+
   // Prevent page scrolling
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
 });
@@ -325,6 +371,8 @@ document.getElementById('menu-btn').addEventListener('click',       goToMenu);
 document.getElementById('resume-btn').addEventListener('click',     resume);
 document.getElementById('restart-btn').addEventListener('click',    restartGame);
 document.getElementById('pause-menu-btn').addEventListener('click', goToMenu);
+document.getElementById('win-hide-btn').addEventListener('click',   hideWinModal);
+document.getElementById('win-show-btn').addEventListener('click',   showWinModal);
 
 // ─── Resize ───────────────────────────────────────────────────────────────────
 

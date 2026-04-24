@@ -358,13 +358,68 @@ kbd {
 }
 
 #win-screen .screen-content {
+  position: relative;        /* anchors the hide button */
   pointer-events: auto;      /* but the card itself is clickable */
   max-width: 360px;
-  padding: 16px 22px 18px;
+  padding: 42px 22px 18px;   /* extra top room for the HIDE pill */
   gap: 8px;
   background: rgba(35, 16, 4, 0.92);
   border: 2px solid #5a3010;
   box-shadow: 0 10px 36px rgba(0,0,0,0.7), 0 0 0 3px rgba(0,0,0,0.35);
+  animation: winCardIn 0.28s ease-out;
+}
+
+@keyframes winCardIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.win-hide-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 5px 12px;
+  font-family: 'Fredoka One', cursive;
+  font-size: 11px;
+  letter-spacing: 2px;
+  line-height: 1;
+  color: rgba(240, 210, 150, 0.85);
+  background: rgba(35, 16, 4, 0.6);
+  border: 1.5px solid rgba(120, 70, 20, 0.6);
+  border-radius: 14px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.12s ease;
+}
+.win-hide-btn:hover {
+  color: #f0ddb0;
+  border-color: rgba(200, 140, 50, 0.9);
+  background: rgba(80, 40, 10, 0.75);
+}
+
+.win-show-btn {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 19;
+  font-family: 'Fredoka One', cursive;
+  font-size: 12px;
+  letter-spacing: 2px;
+  padding: 7px 16px;
+  background: rgba(35, 16, 4, 0.88);
+  border: 2px solid #5a3010;
+  color: rgba(240, 210, 150, 0.85);
+  border-radius: 20px;
+  cursor: pointer;
+  outline: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  transition: all 0.12s ease;
+}
+.win-show-btn:hover {
+  background: rgba(55, 28, 6, 0.95);
+  color: #f0ddb0;
+  border-color: rgba(200, 140, 50, 0.8);
 }
 
 .win-title {

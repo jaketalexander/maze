@@ -89,6 +89,7 @@
     <!-- ── Win Screen ─────────────────────────────────────────────── -->
     <div id="win-screen" class="screen hidden">
       <div class="screen-content">
+        <button id="win-hide-btn" class="win-hide-btn" title="Hide (space)">HIDE</button>
         <h2 id="win-title" class="win-title">PLAYER 1 WINS!</h2>
         <p class="win-reveal-hint"><strong>FAKE WALLS</strong> revealed in red</p>
         <div class="win-buttons">
@@ -98,6 +99,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Floating pill shown when the win card is collapsed -->
+    <button id="win-show-btn" class="win-show-btn hidden" title="Show results (space)">SHOW RESULTS</button>
 
     <!-- ── Pause Screen ───────────────────────────────────────────── -->
     <div id="pause-screen" class="screen hidden">
