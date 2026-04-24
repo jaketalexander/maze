@@ -1,4 +1,4 @@
-import { generateMaze }                          from './maze.js';
+import { generateFairMaze }                      from './maze.js';
 import { Player }                                 from './player.js';
 import { Renderer, HUD_HEIGHT }                  from './renderer.js';
 import { AudioManager }                           from './audio.js';
@@ -63,7 +63,7 @@ const hudMazeNum = document.getElementById('hud-maze-num');
 
 function startGame() {
   const cfg = DIFFICULTIES[difficulty];
-  maze = generateMaze(cfg.cols, cfg.rows);
+  maze = generateFairMaze(cfg.cols, cfg.rows);
 
   const lay  = renderer.layout(cfg.cols, cfg.rows);
   cellSize   = lay.cellSize;
