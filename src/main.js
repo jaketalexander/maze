@@ -305,7 +305,7 @@ window.addEventListener('keydown', e => {
     case 'KeyQ':
       if (state === S.PLAYING) {
         const placed = p1.placeFakeWall(maze);
-        if (placed) { audio.playFakeWall(); updateWallIndicator(1, true); }
+        if (placed) updateWallIndicator(1, true);
       }
       break;
   }
@@ -319,7 +319,7 @@ window.addEventListener('keydown', e => {
     case 'Slash':
       if (state === S.PLAYING) {
         const placed = p2.placeFakeWall(maze);
-        if (placed) { audio.playFakeWall(); updateWallIndicator(2, true); }
+        if (placed) updateWallIndicator(2, true);
       }
       break;
   }
@@ -369,7 +369,7 @@ document.getElementById('next-maze-btn').addEventListener('click',  nextMaze);
 document.getElementById('retry-btn').addEventListener('click',      restartGame);
 document.getElementById('menu-btn').addEventListener('click',       goToMenu);
 document.getElementById('resume-btn').addEventListener('click',     resume);
-document.getElementById('restart-btn').addEventListener('click',    restartGame);
+document.getElementById('restart-btn').addEventListener('click',    startGame);
 document.getElementById('pause-menu-btn').addEventListener('click', goToMenu);
 document.getElementById('win-hide-btn').addEventListener('click',   hideWinModal);
 document.getElementById('win-show-btn').addEventListener('click',   showWinModal);

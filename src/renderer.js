@@ -442,14 +442,29 @@ export class Renderer {
     const { ctx, canvas } = this;
     const label = value === 0 ? 'GO!' : String(value);
     const size  = Math.min(canvas.width, canvas.height) * 0.22;
+    const cx    = canvas.width  / 2;
+    const cy    = canvas.height / 2;
     ctx.save();
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.font         = `400 ${size}px "Fredoka One", "Arial Rounded MT Bold", sans-serif`;
+
+    // Soft glow behind the text
+    ctx.shadowColor = value === 0 ? '#44ff44' : '#44cc44';
+    ctx.shadowBlur  = 50;
+    ctx.fillStyle   = 'rgba(0,0,0,0.01)';
+    ctx.fillText(label, cx, cy);
+
+    // Thick black stroke for contrast against the bright green hedges.
+    ctx.shadowBlur   = 0;
+    ctx.lineJoin     = 'round';
+    ctx.miterLimit   = 2;
+    ctx.strokeStyle  = '#000';
+    ctx.lineWidth    = Math.max(6, size * 0.08);
+    ctx.strokeText(label, cx, cy);
+
     ctx.fillStyle    = value === 0 ? '#44ff44' : '#ffffff';
-    ctx.shadowColor  = value === 0 ? '#44ff44' : '#44cc44';
-    ctx.shadowBlur   = 50;
-    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(label, cx, cy);
     ctx.restore();
   }
 }

@@ -54,12 +54,6 @@ export class AudioManager {
     this.tone(90, 0.07, 'sawtooth', 0.18);
   }
 
-  playFakeWall() {
-    // Subtle "block placed" sound
-    this.tone(220, 0.06, 'square', 0.15);
-    this.tone(330, 0.09, 'square', 0.12, 0.06);
-  }
-
   playWin() {
     const melody = [523, 659, 784, 1047, 1319];
     melody.forEach((f, i) => this.tone(f, 0.28, 'sine', 0.32, i * 0.11));
