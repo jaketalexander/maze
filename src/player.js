@@ -135,10 +135,7 @@ export class Player {
       this.pressStarted = true;
       this.repeatMode   = true;
 
-      if      (dx > 0) this.angle = 0;
-      else if (dx < 0) this.angle = Math.PI;
-      else if (dy > 0) this.angle = Math.PI / 2;
-      else             this.angle = -Math.PI / 2;
+      this._setFacing(dx, dy);
     }
 
     // Resolve chain armed on the *previous* frame's arrival (true 1-frame gap).
@@ -211,13 +208,28 @@ export class Player {
     }
   }
 
+  /** Face the direction of an attempted move (including failed / bump moves). */
+  _setFacing(dx, dy) {
+    if (dx === 0 && dy === 0) return;
+    if      (dx > 0) this.angle = 0;
+    else if (dx < 0) this.angle = Math.PI;
+    else if (dy > 0) this.angle = Math.PI / 2;
+    else             this.angle = -Math.PI / 2;
+  }
+
   _tryMove(dx, dy, maze, cols, rows, offsetX, offsetY, cellSize, _oppFW) {
     const newCol = this.snapCol + dx;
     const newRow = this.snapRow + dy;
-    if (newCol < 0 || newCol >= cols || newRow < 0 || newRow >= rows) return false;
+    if (newCol < 0 || newCol >= cols || newRow < 0 || newRow >= rows) {
+      this._setFacing(dx, dy);
+      return false;
+    }
 
     const side = dirToSide(dx, dy);
-    if (maze[this.snapRow][this.snapCol].walls[side]) return false;
+    if (maze[this.snapRow][this.snapCol].walls[side]) {
+      this._setFacing(dx, dy);
+      return false;
+    }
     // Fake walls are passable by both players — they are visual deceptions only.
 
     this.targetCol = newCol;
@@ -225,11 +237,7 @@ export class Player {
     this.isMoving  = true;
     this.moveDx    = dx;
     this.moveDy    = dy;
-
-    if      (dx > 0) this.angle = 0;
-    else if (dx < 0) this.angle = Math.PI;
-    else if (dy > 0) this.angle = Math.PI / 2;
-    else             this.angle = -Math.PI / 2;
+    this._setFacing(dx, dy);
 
     return true;
   }
