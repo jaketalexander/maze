@@ -3,6 +3,8 @@ services:
     name: maze-racer
     env: node
     plan: free
+  # Change to `main` after you merge multiplayer.
+    branch: multiplayer
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
