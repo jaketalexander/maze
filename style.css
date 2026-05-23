@@ -27,6 +27,9 @@ body {
   top: 0;
   left: 0;
   display: block;
+  z-index: 0;
+  /* Keyboard-only game — never steal clicks from menu / lobby buttons. */
+  pointer-events: none;
 }
 
 /* ── HUD ─────────────────────────────────────────────────────────────── */
@@ -116,6 +119,7 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 20;
+  pointer-events: auto;
   background: rgba(40, 18, 4, 0.94);
   backdrop-filter: blur(3px);
 }
@@ -282,6 +286,13 @@ kbd {
 }
 
 /* Buttons */
+.primary-btn,
+.secondary-btn {
+  cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
+}
+
 .primary-btn {
   font-family: 'Fredoka One', cursive;
   font-size: 18px;

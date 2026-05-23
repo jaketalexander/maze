@@ -26,12 +26,20 @@ function setRoomParam(code) {
   history.replaceState({}, '', url.toString());
 }
 
+const ROOM_LOOKUP_MS = 12_000;
+
 /** @returns {Promise<boolean>} true if the server has an active room for this code */
 async function roomExistsOnServer(code) {
-  const r = await fetch(`/api/room/${encodeURIComponent(code)}`);
-  if (r.status === 404) return false;
-  if (!r.ok) throw new Error(`room lookup ${r.status}`);
-  return true;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ROOM_LOOKUP_MS);
+  try {
+    const r = await fetch(`/api/room/${encodeURIComponent(code)}`, { signal: ac.signal });
+    if (r.status === 404) return false;
+    if (!r.ok) throw new Error(`room lookup ${r.status}`);
+    return true;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -81,30 +89,44 @@ export function startLobby() {
     $('join-code').addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
     });
-    $('join-go-btn').onclick = async () => {
-      const code = $('join-code').value.trim().toUpperCase();
+    async function tryJoinWithCode(code) {
+      const joinBtn = $('join-go-btn');
       if (code.length !== 4) {
         setText($('join-error'), 'Codes are 4 letters.');
         return;
       }
       setText($('join-error'), '');
-      $('join-go-btn').disabled = true;
+      joinBtn.disabled = true;
       try {
         const exists = await roomExistsOnServer(code);
         if (!exists) {
           setText($('join-error'), 'That room does not exist or it has expired. Ask the host for a new code.');
           clearRoomParam();
-          $('join-go-btn').disabled = false;
           return;
         }
         setRoomParam(code);
         enterRoom({ code });
-      } catch {
-        setText($('join-error'), 'Could not reach the game server.');
+      } catch (err) {
+        const timedOut = err?.name === 'AbortError';
+        setText($('join-error'), timedOut
+          ? 'Server is slow or offline. Wait a moment and try again.'
+          : 'Could not reach the game server.');
         clearRoomParam();
-        $('join-go-btn').disabled = false;
+      } finally {
+        joinBtn.disabled = false;
       }
+    }
+
+    $('join-go-btn').onclick = () => {
+      tryJoinWithCode($('join-code').value.trim().toUpperCase());
     };
+
+    $('join-code').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        tryJoinWithCode($('join-code').value.trim().toUpperCase());
+      }
+    });
 
     // ── Room (waiting / pre-game) ───────────────────────────────────────
     let net = null;
@@ -245,6 +267,8 @@ export function startLobby() {
       showOnly(join);
       setText($('join-error'), 'Checking room…');
       (async () => {
+        const joinBtn = $('join-go-btn');
+        joinBtn.disabled = true;
         try {
           const exists = await roomExistsOnServer(params.room);
           if (!exists) {
@@ -257,10 +281,15 @@ export function startLobby() {
           setText($('join-error'), '');
           setRoomParam(params.room);
           enterRoom({ code: params.room });
-        } catch {
-          setText($('join-error'), 'Could not reach the game server.');
+        } catch (err) {
+          const timedOut = err?.name === 'AbortError';
+          setText($('join-error'), timedOut
+            ? 'Server is waking up (Render free tier). Wait ~30s and tap JOIN again.'
+            : 'Could not reach the game server.');
           clearRoomParam();
           $('join-code').focus();
+        } finally {
+          joinBtn.disabled = false;
         }
       })();
     } else {
